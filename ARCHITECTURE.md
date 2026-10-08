@@ -584,7 +584,9 @@ ffmpeg is a system dependency, called through `subprocess`:
   timeout can kill a child but not a thread. PyAV and ffmpeg-python are rejected; faster-whisper still installs PyAV,
   but always receives decoded arrays (the contract suites enforce it).
 - **Never given a URL.** Every input is fetched through `BlobStore` into a local file, and ffmpeg runs with
-  `-protocol_whitelist file,pipe`; an HLS playlist handed to it would bypass the URI allow-list.
+  `-protocol_whitelist file,pipe`; an HLS playlist handed to it would bypass the URI allow-list. Because `file` must
+  stay allowed, every ffprobe and ffmpeg input also gets `-format_whitelist` with only the container demuxers scenewise
+  needs (no `hls`, `concat` or image sequences), so a local file whose content is a playlist cannot open other files.
 - **Always an argv list** and a timeout; ruff bans `subprocess.call`. Exit codes plus the stderr tail map to
   `InputError("corrupt_media")` or `InternalError`.
 - **Checked at start-up.** `bootstrap` finds `ffmpeg` and `ffprobe`, checks a minimum major version and raises

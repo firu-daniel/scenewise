@@ -1,0 +1,86 @@
+name: extended
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  schedule:
+    - cron: "17 3 * * *"   # nightly, default branch
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  # One group per event kind, so a merge never cancels the nightly. Labelling a PR with any other
+  # label gets a group of its own (the run id), so it neither cancels nor replaces a model run.
+  group: >-
+    ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}-${{
+    github.event.action == 'labeled' && github.event.label.name != 'run-model-tests' && github.run_id || 'run' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+env:
+  UV_LOCKED: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+
+jobs:
+  models:                  # real pinned models; PRs only with the run-model-tests label
+    if: >-
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'run-model-tests') &&
+       (github.event.action != 'labeled' || github.event.label.name == 'run-model-tests'))
+    runs-on: ubuntu-24.04
+    env:
+      HF_HOME: ${{ github.workspace }}/.hf-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { persist-credentials: false }
+      - name: model tier exists (tests/models.lock arrives with roadmap item 1)
+        id: tier
+        run: |
+          if [ -s tests/models.lock ]; then echo "run=true" >> "$GITHUB_OUTPUT"; else echo "::notice::no tests/models.lock yet; model tier not run"; echo "run=false" >> "$GITHUB_OUTPUT"; fi
+      - if: steps.tier.outputs.run == 'true'
+        uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with: { enable-cache: true }
+      - if: steps.tier.outputs.run == 'true'
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - if: steps.tier.outputs.run == 'true'
+        id: hf
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9  # v6.1.0
+        with:
+          path: .hf-cache
+          key: hf-${{ hashFiles('tests/models.lock') }}
+      - if: steps.tier.outputs.run == 'true'
+        run: uv sync --extra service --extra asr --extra llm-anthropic --extra vision --extra gcs --extra torch-cpu
+      - if: steps.tier.outputs.run == 'true' && steps.hf.outputs.cache-hit != 'true'
+        run: uv run python scripts/fetch_models.py tests/models.lock   # hf_hub_download per pinned file, sha256-checked
+      - name: model tier, offline; adapter coverage is reported, not gated
+        if: steps.tier.outputs.run == 'true'
+        env: { HF_HUB_OFFLINE: "1" }
+        run: |
+          uv run pytest -c pyproject.toml -m model --timeout=600 --cov --cov-config=pyproject.toml --cov-report= --cov-fail-under=0 --junitxml=pytest.xml
+          uv run coverage report --rcfile=pyproject.toml --omit=__none__ --include='src/scenewise/adapters/*' --fail-under=0
+      - name: no skipped or xfailed model test
+        if: steps.tier.outputs.run == 'true'
+        run: uv run python scripts/check_junit.py pytest.xml
+
+  property-nightly:        # hypothesis with fresh randomness and 1000 examples
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with: { enable-cache: true }
+      - run: uv sync --extra service   # the same environment as the test job's unit run
+      - run: uv run pytest -c pyproject.toml tests/unit --hypothesis-profile=nightly --timeout=1800 -p no:randomly
+
+  supply-chain:            # fails loudly (a red scheduled run notifies); never a merge requirement
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+      - name: known vulnerabilities in uv.lock
+        run: uv audit --preview-features audit-command
+      - name: zizmor online audits (impostor-commit, ref-confusion, known-vulnerable-actions, stale-action-refs)
+        env: { GH_TOKEN: "${{ github.token }}" }
+        run: uv run --only-group dev zizmor --no-config .github

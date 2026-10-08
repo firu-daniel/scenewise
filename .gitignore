@@ -1,1 +1,24 @@
 .DS_Store
+# environments and caches
+.venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.hypothesis/
+.import_linter_cache/
+# test and coverage output
+.coverage
+.coverage.*
+coverage.xml
+pytest*.xml
+htmlcov/
+# local state of `scenewise` runs and builds
+.scenewise/
+dist/
+build/
+# secrets: never committed (.env.example is)
+.env
+.env.local
+.env.*.local

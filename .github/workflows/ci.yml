@@ -1,0 +1,68 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:            # default types: opened, synchronize, reopened
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}   # every main commit gets a full run
+env:
+  UV_LOCKED: "1"
+  HF_HUB_DISABLE_TELEMETRY: "1"
+  CORE: "src/scenewise/domain/*,src/scenewise/app/*,src/scenewise/ports.py,src/scenewise/ports/*"
+
+jobs:
+  static:                  # every tool is pointed at /pyproject.toml explicitly; stray config files fail first
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { persist-credentials: false }
+      - name: all tool config lives in /pyproject.toml (before setup-uv, which reads uv.toml)
+        run: python3 scripts/check_stray_config.py
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with: { enable-cache: true }   # uv version comes from [tool.uv] required-version
+      - run: uv lock --check
+      - run: bash scripts/check_lock.sh
+      - run: uv sync --extra service --extra asr --extra llm-anthropic --extra vision --extra gcs --extra torch-cpu
+      - run: uv run ruff format --config pyproject.toml --check .
+      - run: uv run ruff check --config pyproject.toml --output-format=github .
+      - run: uv run mypy --config-file pyproject.toml
+      - run: uv run lint-imports --no-cache --config pyproject.toml
+      - run: uv run python scripts/check_module_size.py
+      - run: uv run python scripts/check_suppressions.py
+      - run: uv run deptry --config pyproject.toml src
+      - run: uv run vulture --config pyproject.toml
+      - run: uv run typos --isolated --config pyproject.toml
+      - run: uv run zizmor --offline --no-config .github
+
+  test:                    # unit + contract (fakes, light adapters) + e2e on generated media
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix: { python: ["3.12", "3.13", "3.14"] }
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: { persist-credentials: false }
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7  # v10.2.0
+        with: { enable-cache: true, python-version: "${{ matrix.python }}" }
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends ffmpeg
+      - run: uv sync --extra service
+      - name: model marker only in tests/contract
+        run: |
+          set +e
+          out=$(uv run pytest -c pyproject.toml -m model --collect-only -q); code=$?
+          set -e
+          if [ "$code" -ne 0 ] && [ "$code" -ne 5 ]; then echo "$out"; echo "::error::collection failed ($code)"; exit 1; fi
+          bad=$(grep '::' <<<"$out" | grep -v '^tests/contract/' || true)
+          if [ -n "$bad" ]; then echo "::error::model-marked tests outside tests/contract:"; echo "$bad"; exit 1; fi
+      - name: core coverage from unit tests only (100%)
+        env: { COVERAGE_FILE: .coverage.unit }
+        run: |
+          uv run pytest -c pyproject.toml tests/unit --cov --cov-config=pyproject.toml --cov-report= --cov-fail-under=0 --junitxml=pytest-unit.xml
+          uv run coverage report --rcfile=pyproject.toml --data-file=.coverage.unit --include="$CORE" --fail-under=100
+      - name: all PR tiers, overall coverage (90%)
+        run: uv run pytest -c pyproject.toml --cov --cov-config=pyproject.toml --cov-report=xml --junitxml=pytest.xml
+      - name: no skipped or xfailed test in CI
+        run: uv run python scripts/check_junit.py pytest-unit.xml pytest.xml
