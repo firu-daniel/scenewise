@@ -45,6 +45,6 @@
 - [x] `logging` · concept · docs/concepts/logging.md
       title: Logging
       entry: setup: src/scenewise/service/logs.py configure, LogSettings level and format ; context: structlog bound_contextvars in src/scenewise/app/runner.py, src/scenewise/app/delivery.py, src/scenewise/service/http/push.py _log_context (Cloud Tasks headers) ; redaction: src/scenewise/app/contract/mapping.py _validation_summary, src/scenewise/domain/errors.py module docstring ; reference: ARCHITECTURE.md §10
-- [ ] `index` · concept · docs/INDEX.md
+- [x] `index` · concept · docs/INDEX.md
       title: scenewise Docs Index
       entry: read this checklist and every doc under docs/features/ and docs/concepts/ ; produce a grouped, linked map (features by area, concepts by area) ; fold in sdlc-harness/docs_catalog/needs_review.md as a Flagged for human review section ; parity is off, so no parity gaps section
