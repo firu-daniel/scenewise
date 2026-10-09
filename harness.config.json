@@ -73,5 +73,9 @@
   },
   "docs": {
     "root": "docs"
-  }
+  },
+  "execution": {
+    "target": "github-actions"
+  },
+  "forge": "github"
 }
