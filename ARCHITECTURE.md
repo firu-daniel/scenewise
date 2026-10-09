@@ -113,7 +113,8 @@ scenewise/
     │   │   ├── requests.py   #     JobRequestV1 and its input, delivery and option models
     │   │   ├── results.py    #     JobResultV1, JobStatusV1, the problem body
     │   │   ├── taxonomy.py   #     item 4: TOML taxonomy and JSON calibration sidecar models
-    │   │   └── mapping.py    #     to_domain(), from_domain(); ValueError → InputError
+    │   │   └── mapping.py    #     to_domain() for requests, *_json() per document; ValueError → InputError
+    │   ├── constants.py      #   constants app modules share with no owning module (media type, schema version)
     │   ├── deps.py           #   Dependencies, Speech, CalibrationDeps (port bundles)
     │   ├── frames.py         #   acquire_frames(): VisualSource → MediaTool or ImageReader
     │   ├── audio.py          #   acquire_audio(): AudioSource → BlobStore + manifests → MediaTool
@@ -121,7 +122,7 @@ scenewise/
     │   ├── stages.py         #   one function per stage
     │   ├── runner.py         #   run_job(job, deps, *, deadline) → Analysis
     │   ├── publish.py        #   writes artifacts only, under …/a{n}/
-    │   ├── delivery.py       #   handle_delivery(): decide → claim → parse → run → publish → record → notify
+    │   ├── delivery.py       #   handle_delivery(): decide → claim → parse → run → publish → record → notify; job_status()
     │   └── calibrate.py      #   item 4: calibrate(request, *, deps)
     │
     ├── adapters/             # LAYER adapters: driven implementations of ports; heavy imports live here
@@ -190,7 +191,8 @@ practice:
   or httpx. Speech policy works over tuples of floats, not arrays.
 - **`adapters`** implement ports and never import `app` or `service.config`; `bootstrap` passes keyword arguments.
 - **`service`** is the driving side. Only `bootstrap.py` imports `adapters`, lazily, inside the `match` branch that
-  selects a back end, so a missing extra is `ConfigurationError("install scenewise[asr]")`, not an `ImportError`.
+  selects a back end, so a missing extra is `ConfigurationError(code=…, detail="install scenewise[asr]")`, not an
+  `ImportError`.
 - **One wire contract.** HTTP, `publish.py` and `delivery.py` all serialise through `app/contract/`; the notifier
   receives pre-serialised bytes.
 
@@ -345,7 +347,7 @@ TextContext(title, description, tags);  JobSpec(stages, options)
 Job(id, spec, audio, visual, context, external_ref, callback, artifacts_prefix)
 class JobState(StrEnum): RUNNING, SUCCEEDED, PARTIAL, FAILED
 JobRecord(job_id, state, attempt, lease_until, request_digest, error_code, result_uri,
-          updated_at, schema_version, scenewise_version, external_ref)
+          updated_at, scenewise_version, external_ref)  # schema_version is wire-only (JobRecordV1)
 AttemptInfo(now, lease, max_attempts)
 type Decision = Start | AlreadyDone | InProgress | GiveUp | Conflict
 # Start(attempt), AlreadyDone(record), InProgress(retry_after), GiveUp(attempt), Conflict(existing_digest)
@@ -393,7 +395,7 @@ Label(id, name, path, score_max, score_mean, frames, calibrated, external_id)
 
 | Where | What | Why there |
 |---|---|---|
-| `app/contract/` | Versioned wire models (`schema_version: "1"`, unions on `kind`, inputs `extra="forbid"`), explicit `to_domain()` / `from_domain()` | The wire format evolves apart from the domain; every writer reaches it in `app`. |
+| `app/contract/` | Versioned wire models (`schema_version: "1"`, unions on `kind`, inputs `extra="forbid"`), explicit `to_domain()` for requests and one `*_json()` per document (`record_to_json`, `status_json`, `result_json`, `rejection_json`, …) | The wire format evolves apart from the domain; every writer reaches it in `app`. |
 | `app/contract/envelope.py` | Lenient `Envelope`: `schema_version`, `job_id`, `external_ref` (invalid → `None`) | Parsed first, so a record can be keyed when the rest is invalid. |
 | `app/contract/taxonomy.py` | TOML taxonomies (stdlib `tomllib`), the JSON calibration sidecar | Hand-edited files; no new dependency. |
 | `app/llm_output.py` | `TypeAdapter` parsing of LLM JSON | Its errors feed the repair prompt; cross-field rules stay in `domain`. |
@@ -407,7 +409,8 @@ Sources: q8a §5; q8c §1, §2, §4–§7; q3; D9, D10, D19, D21, D23, U14.
 
 ## 6. Stages
 
-Every stage **fetches through a port, transforms with pure domain functions and returns domain data**. Stage functions
+Every stage **gets its inputs through ports, transforms with pure domain functions and returns domain data**; it may
+read a local file that a port has materialised for it (`audio` reads the track `MediaTool` extracted). Stage functions
 live in `app/stages.py`; `app/runner.py` composes them according to `domain/plan.py`.
 
 | Stage | What runs (default) | Ports | Pure core | Findings |
@@ -509,41 +512,50 @@ Sources: q8a §6.3; D11.
 
 ## 9. Errors and HTTP mapping
 
-Four categories carry an error `code` the caller can act on. Leaf classes exist only where the HTTP mapping differs:
+Four categories carry an error `code` the caller can act on. Leaf classes exist only where the HTTP mapping differs.
+The codes are a closed vocabulary, one `Literal` alias per class, and each constructor takes only its own class's
+codes (`JobIdConflictError` and `JobNotFoundError` each have exactly one and take none), so mypy rejects an unknown code and a code raised
+through the wrong class:
 
 ```python
 class ScenewiseError(Exception):  # "input" | "retryable" | "internal" | "configuration"
-    def __init__(self, code: str = "internal", detail: str = "") -> None: ...
+    def __init__(self, *, code: InternalCode = "internal", detail: str = "") -> None: ...
 
-class InputError(ScenewiseError)  # caller must change the request; never retried
+class InputError(ScenewiseError)  # caller must change the request; never retried (InputCode)
     # invalid_request, uri_not_allowed, input_unavailable, corrupt_media,
-    # invalid_sprite_grid, input_encrypted, stage_unavailable, job_id_conflict
+    # invalid_sprite_grid, input_encrypted, stage_unavailable
     class MediaTooLargeError(InputError)  # media_too_large, exceeds_push_budget, request_too_large
     class UnsupportedMediaError(InputError)  # unsupported_media, manifest_unsupported
+    class JobIdConflictError(InputError)  # 409: job_id_conflict (fixed; takes no code)
+    class JobNotFoundError(InputError)  # 404: job_not_found (fixed; takes no code)
 class RetryableError(ScenewiseError)  # backend_unavailable, storage_unavailable, job_in_progress
-    class CapacityError(RetryableError)  # 429, from admission only
-class InternalError(ScenewiseError)  # ours; a retry will not help
+    class CapacityError(RetryableError)  # 429, from admission only: capacity_exceeded
+class InternalError(ScenewiseError)  # ours; a retry will not help (InternalCode)
     # model_output_invalid, model_refused, resource_exhausted, deadline_exceeded,
     # invariant_violation, attempts_exhausted, unexpected
 class ConfigurationError(ScenewiseError)  # start-up only; the process exits non-zero
+    # stage_unavailable, store_unavailable, ffmpeg_unavailable, ffmpeg_too_old
 ```
 
-- **Domain `ValueError`s** become `InputError("invalid_request")` in `mapping.to_domain`,
-  `InternalError("model_output_invalid")` in LLM and model parsing, and `InternalError("invariant_violation")` anywhere
-  else in the runner.
+- **Domain `ValueError`s** become `InputError(code="invalid_request")` in `mapping.to_domain`,
+  `InternalError(code="model_output_invalid")` in LLM and model parsing, and
+  `InternalError(code="invariant_violation")` anywhere else in the runner.
 - **Inside a stage**, input and internal errors fail that stage only. A `RetryableError` fails the attempt: the record
   is released (`RUNNING{attempt=n, lease_until=now}` with `if_generation=<token>`, which `GET` reports as
   `retry_wait`) and the answer is 503, until `max_attempts`, then `FAILED("attempts_exhausted")`.
 - **Before the stages** (parse, fetch, probe, acquisition), any error fails the whole job. Any non-scenewise exception
-  becomes `InternalError("unexpected")`, so a deterministic bug does not burn retries.
+  becomes `InternalError(code="unexpected")`, so a deterministic bug does not burn retries.
 - **Stages the deployment cannot run.** A `required_stages` entry with no back end is a `ConfigurationError` at
   start-up, so the revision never becomes ready; a request for a stage outside `enabled_stages` is
-  `InputError("stage_unavailable")`.
-- **HTTP.** `problems.py` renders RFC 9457 problem+json with `code`, `category` and `retryable`. The 413 and 415
+  `InputError(code="stage_unavailable")`.
+- **HTTP.** Only `service` maps an error to a status: a use case reports the error (a reused job id is a
+  `Rejected(JobIdConflictError)` delivery outcome, a missing record is `JobNotFoundError`) and
+  `problems.http_status` picks 409 or 404.
+  `problems.py` renders RFC 9457 problem+json with `code`, `category` and `retryable`. The 413 and 415
   classes apply only to non-push callers; **on the push path every error with a keyed record answers 200**, because
   Cloud Tasks retries every non-2xx.
 
-Sources: q8a §6.2, §8; q8c §6.3 item 20, §7.1; D7.
+Sources: q8a §6.2, §8; q8c §6.3 item 20, §7.1; D7, A12.
 
 ---
 
@@ -558,7 +570,7 @@ secrets. Groups:
 - `llm` (`backend`: `anthropic` | `openai-compat` | `none`; for Anthropic, the provider, first-party or Vertex AI, and
   the region; the thresholds `summary_min_words`, `chapters_min_seconds`, `chapters_min_count`);
 - `vision`; `labels` (`taxonomy_path`, `z_min`); `storage`;
-- `inputs` (URI allow-lists, `allow_local_paths`, segment and byte limits);
+- `inputs` (URI allow-lists, `local_roots`, segment and byte limits);
 - `delivery` (allowed callback URLs, HMAC keys, `artifacts.uri_prefix`);
 - `service` (`max_jobs`, `max_body_bytes`, `attempt_budget_s`, `watchdog_grace_s`, `dispatch_deadline_s`,
   `lease_margin_s`, `max_attempts`, `state_prefix`, `required_stages`);
@@ -570,14 +582,17 @@ secrets. Groups:
 and passed to the labels use case keyed by id (`app` does no file I/O); a malformed one is a `ConfigurationError`.
 
 **URI policy.** `gs://` only for allow-listed buckets, `https://` only for allow-listed hosts, with no redirects and no
-private, loopback or link-local addresses; `file://` from the CLI only. `storage/by_scheme.py` enforces this on every
-access, including URIs inside segment lists and playlists.
+private, loopback or link-local addresses; `file://` (CLI and HTTP) only below `inputs.local_roots`, never below the
+state prefix or an artifact root; the CLI adds the given file's directory. Inputs and outputs use separate stores:
+`Dependencies.inputs` reads inputs, and `Dependencies.store` writes only below the state prefix and
+`service.artifact_roots`.
+`storage/by_scheme.py` enforces this on every access, including URIs inside segment lists and playlists.
 
 **Logging.** structlog with the stdlib `ProcessorFormatter`, so library logs are JSON too. `runner.py` binds `job_id`,
 `stage`, `attempt` and `backend` through `contextvars`; `push.py` binds the Cloud Tasks task name and the Cloud Run
 trace field. **Logs never contain transcript text or signed URIs, and a test enforces it.**
 
-Sources: q8a §7.1–7.2, §9.1; q8c §3, §6.4 item 25.3, §7.4–7.5; q1 §4.0; U5, U7, D8.
+Sources: q8a §7.1–7.2, §9.1; q8c §3, §6.4 item 25.3, §7.4–7.5; q1 §4.0; U5, U7, D8, A6, A7.
 
 ---
 
@@ -595,7 +610,7 @@ ffmpeg is a system dependency, called through `subprocess`:
   stay allowed, every ffprobe and ffmpeg input also gets `-format_whitelist` with only the container demuxers scenewise
   needs (no `hls`, `concat` or image sequences), so a local file whose content is a playlist cannot open other files.
 - **Always an argv list** and a timeout; ruff bans `subprocess.call`. Exit codes plus the stderr tail map to
-  `InputError("corrupt_media")` or `InternalError`.
+  `InputError(code="corrupt_media")` or `InternalError`.
 - **Checked at start-up.** `bootstrap` finds `ffmpeg` and `ffprobe`, checks a minimum major version and raises
   `ConfigurationError` with an install hint. `SCENEWISE_MEDIA__FFMPEG` overrides the path. Declared in the README and
   the Dockerfile; no `[external]` table while PEP 725 is a Draft.
@@ -657,7 +672,7 @@ def chapter(
     try:
         return chapters.normalise(items, duration=duration)  # pure; may raise
     except ValueError as e:
-        raise InternalError("model_output_invalid", detail=str(e)) from e
+        raise InternalError(code="model_output_invalid", detail=str(e)) from e
 
 
 # app/llm_output.py (excerpt)
@@ -670,9 +685,9 @@ def generate_valid[T](
 ) -> T:
     generation = generator.generate(request)
     if generation.refused:  # before any parse, so a refusal is never re-asked
-        raise InternalError("model_refused")
+        raise InternalError(code="model_refused")
     # validate_json; on ValidationError re-ask once with the errors;
-    # still invalid → InternalError("model_output_invalid") → the stage fails
+    # still invalid → InternalError(code="model_output_invalid") → the stage fails
     ...
 ```
 
@@ -682,7 +697,7 @@ merge → recogniser in chunks → pure words and transcript.
 **Ownership on the delivery path:** `app/publish.py` writes artifacts only; `app/delivery.py` owns every job-record
 write and the notify call; the CLI's `analyse` mode calls `run_job` and prints, without publishing.
 
-Sources: q8a §3, §3.1; q8c §2, §7.1; U11.
+Sources: q8a §3, §3.1; q8c §2, §7.1; U11, A12.
 
 ---
 

@@ -7,6 +7,8 @@ from scenewise.domain.errors import (
     CapacityError,
     ConfigurationError,
     InputError,
+    JobIdConflictError,
+    JobNotFoundError,
     MediaTooLargeError,
     RetryableError,
     ScenewiseError,
@@ -14,7 +16,7 @@ from scenewise.domain.errors import (
 )
 from scenewise.service.config import ServiceSettings, Settings
 from scenewise.service.http.health import Watchdog
-from scenewise.service.http.problems import http_status
+from scenewise.service.http.problems import http_status, problem_title
 
 
 def test_watchdog_reports_only_overdue_jobs() -> None:
@@ -34,12 +36,20 @@ def test_watchdog_reports_only_overdue_jobs() -> None:
         (MediaTooLargeError(code="request_too_large"), 413),
         (UnsupportedMediaError(code="unsupported_media"), 415),
         (InputError(code="invalid_request"), 422),
-        (ConfigurationError(code="x"), 500),
+        (JobIdConflictError(), 409),
+        (JobNotFoundError(), 404),
+        (ConfigurationError(code="store_unavailable"), 500),
         (ScenewiseError(), 500),
     ],
 )
 def test_http_status(error: ScenewiseError, status: int) -> None:
     assert http_status(error) == status
+
+
+def test_problem_title_is_the_status_phrase_unless_the_error_has_one() -> None:
+    conflict = JobIdConflictError()
+    assert problem_title(conflict, 409) == "Job id already used"
+    assert problem_title(JobNotFoundError(), 404) == "Not Found"
 
 
 def test_timing_invariant() -> None:

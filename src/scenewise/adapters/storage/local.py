@@ -13,11 +13,14 @@ import tempfile
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
+from typing import Final
 from urllib.parse import urlsplit
 from urllib.request import url2pathname
 
 from scenewise.domain.errors import InputError, RetryableError
-from scenewise.ports import Blob, WriteConflictError
+from scenewise.ports import ABSENT_GENERATION, Blob, WriteConflictError
+
+_HAND_PLACED_GENERATION: Final = 1  # a file placed by hand, with no sidecar
 
 
 class LocalBlobStore:
@@ -60,10 +63,10 @@ class LocalBlobStore:
 
     def _generation(self, path: Path) -> int:
         if not path.exists():
-            return 0
+            return ABSENT_GENERATION
         meta = self._meta(path)
         if not meta.exists():
-            return 1  # a file placed by hand counts as generation 1
+            return _HAND_PLACED_GENERATION
         return int(json.loads(meta.read_text(encoding="utf-8"))["generation"])
 
     @contextmanager

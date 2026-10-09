@@ -5,6 +5,7 @@ from typing import Literal, assert_never
 from pydantic import ValidationError
 
 from scenewise import __version__
+from scenewise.app.constants import SCHEMA_VERSION_V1
 from scenewise.app.contract.records import JobRecordV1
 from scenewise.app.contract.requests import AudioFileV1, JobRequestV1, NoAudioV1
 from scenewise.app.contract.results import (
@@ -38,8 +39,7 @@ from scenewise.domain.results import (
     Succeeded,
     job_state,
 )
-
-_MS = 1000
+from scenewise.domain.time import MS_PER_SECOND
 
 
 def _validation_summary(error: ValidationError) -> str:
@@ -63,7 +63,7 @@ def _audio(audio: AudioFileV1 | NoAudioV1 | None) -> AudioSource | None:
 
 
 def to_domain(raw: bytes) -> Job:
-    """Validate a request body; any problem is ``InputError("invalid_request")``."""
+    """Validate a request body; any problem is ``invalid_request`` (``InputError``)."""
     try:
         request = JobRequestV1.model_validate_json(raw)
         return Job(
@@ -84,7 +84,7 @@ def record_to_json(record: JobRecord) -> bytes:
     ref = record.external_ref
     return (
         JobRecordV1(
-            schema_version="1",
+            schema_version=SCHEMA_VERSION_V1,
             scenewise_version=record.scenewise_version,
             job_id=record.job_id,
             state=record.state.value,
@@ -119,7 +119,6 @@ def record_from_json(data: bytes) -> JobRecord:
         error_code=doc.error_code,
         result_uri=doc.result_uri,
         updated_at=doc.updated_at,
-        schema_version=doc.schema_version,
         scenewise_version=doc.scenewise_version,
         external_ref=None if ref is None else tuple(sorted(ref.items())),
     )
@@ -222,7 +221,8 @@ def result_json(
             media=_media(analysis.media),
             stages=stages,
             timings_ms={
-                o.stage.value: round(o.seconds * _MS) for o in analysis.outcomes
+                o.stage.value: round(o.seconds * MS_PER_SECOND)
+                for o in analysis.outcomes
             },
             attempt=attempt,
         )

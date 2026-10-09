@@ -11,7 +11,10 @@ from scenewise.ports import ImageReader
 
 
 class ImageReaderContract:
-    """Subclass and provide ``reader``; ``image`` is a 160x120 picture."""
+    """Subclass and provide ``reader``.
+
+    ``image`` is a 160x120 picture (from ``tests/contract/conftest.py``).
+    """
 
     def test_one_frame_per_tile(self, reader: ImageReader, image: Path) -> None:
         tiles = [

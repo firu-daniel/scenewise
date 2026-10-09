@@ -1,10 +1,11 @@
 """Probed media facts, frames and image tiles."""
 
 from dataclasses import dataclass
+from typing import Final
 
 from scenewise.domain.time import Seconds
 
-RGB24_BYTES_PER_PIXEL = 3
+RGB24_BYTES_PER_PIXEL: Final = 3
 
 
 def _check_positive(**values: int) -> None:

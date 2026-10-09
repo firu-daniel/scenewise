@@ -86,7 +86,7 @@ def run_job(job: Job, deps: Dependencies, *, deadline: float) -> Analysis:
     """Run every requested stage of ``job``; errors before the stages fail the job.
 
     A requested stage this deployment does not offer is
-    ``InputError("stage_unavailable")``. The deadline is checked between stages.
+    ``InputError(code="stage_unavailable")``. The deadline is checked between stages.
     """
     if missing := plan.unavailable(job.spec.stages, deps.enabled_stages):
         names = ", ".join(stage.value for stage in missing)
