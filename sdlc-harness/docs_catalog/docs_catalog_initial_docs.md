@@ -36,7 +36,7 @@
 - [ ] `storage-and-uri-policy` · concept · docs/concepts/storage-and-uri-policy.md
       title: Storage and URI Policy
       entry: ports: src/scenewise/ports.py BlobStore, Blob, WriteConflictError ; adapters: src/scenewise/adapters/storage/local.py LocalBlobStore ; composition: src/scenewise/service/bootstrap.py _stores ; usecases: src/scenewise/app/delivery.py record_uri, job_prefix, artifacts_prefix, src/scenewise/app/publish.py attempt_prefix ; config: ServiceSettings.state_prefix, artifact_roots, InputSettings.local_roots ; stored_data: {state_prefix}/{job_id}/status.json, {prefix}/a{attempt}/, sidecar .name.meta.json and .name.lock files
-- [ ] `media-processing` · concept · docs/concepts/media-processing.md
+- [x] `media-processing` · concept · docs/concepts/media-processing.md
       title: Media Processing with ffmpeg
       entry: ports: src/scenewise/ports.py MediaTool, ImageReader, AUDIO_SAMPLE_RATE, AUDIO_CHANNELS ; adapters: src/scenewise/adapters/media/ffmpeg.py FfmpegMediaTool, find_binaries, scaled_size, src/scenewise/adapters/media/images.py PillowImageReader ; domain: src/scenewise/domain/media.py MediaInfo, Frame, Tile, Rect ; config: MediaSettings ffmpeg, ffprobe, min_major ; reference: ARCHITECTURE.md §11
 - [ ] `configuration` · concept · docs/concepts/configuration.md
