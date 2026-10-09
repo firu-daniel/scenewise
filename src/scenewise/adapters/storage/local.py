@@ -15,7 +15,7 @@ import json
 import os
 import tempfile
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit
@@ -61,7 +61,7 @@ class LocalBlobStore:
             raise InputError(code="uri_not_allowed", detail="path is not allowed")
         spelling = _spelt(requested)
         if any(
-            path.is_relative_to(real) and not spelling.is_relative_to(spelt)
+            _enters(path, real) and not spelling.is_relative_to(spelt)
             for real, spelt in self._fenced
         ):
             raise InputError(code="uri_not_allowed", detail="path is not allowed")
@@ -137,6 +137,21 @@ class LocalBlobStore:
             raise RetryableError(
                 code="storage_unavailable", detail=type(e).__name__
             ) from e
+
+
+def _enters(path: Path, real: Path) -> bool:
+    """Whether the resolved ``path`` lies in directory ``real``, by name or identity.
+
+    ``resolve()`` does not fold case, so on a case-insensitive file system a
+    case-changed spelling of ``real`` is the same directory under another name.
+    """
+    if path.is_relative_to(real):
+        return True
+    for parent in (path, *path.parents):
+        with suppress(OSError):
+            if parent.samefile(real):
+                return True
+    return False
 
 
 def _spelt(path: Path) -> Path:

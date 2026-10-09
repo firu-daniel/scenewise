@@ -150,6 +150,26 @@ def test_a_second_spelling_of_a_parent_cannot_enter_a_fenced_root(
     assert (tmp_path / "out" / "artifacts" / "x").read_bytes() == b"x"
 
 
+def test_a_case_changed_spelling_cannot_enter_a_fenced_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "out" / "state").mkdir(parents=True)
+
+    # Simulates a case-insensitive file system, so the test runs on a
+    # case-sensitive CI host instead of skipping there.
+    def case_insensitive(self: Path, other: Path) -> bool:
+        return str(self).lower() == str(other).lower()
+
+    monkeypatch.setattr(Path, "samefile", case_insensitive)
+    store = _fenced_store(tmp_path)
+    with pytest.raises(InputError) as caught:
+        store.write((tmp_path / "out" / "STATE" / "x").as_uri(), b"x", content_type="x")
+    assert caught.value.code == "uri_not_allowed"
+    assert not (tmp_path / "out" / "STATE").exists()
+    store.write((tmp_path / "out" / "artifacts" / "x").as_uri(), b"x", content_type="x")
+    assert (tmp_path / "out" / "artifacts" / "x").read_bytes() == b"x"
+
+
 def test_concurrent_claims_have_one_winner(tmp_path: Path) -> None:
     store = LocalBlobStore(roots=[tmp_path])
     uri = (tmp_path / "status.json").as_uri()

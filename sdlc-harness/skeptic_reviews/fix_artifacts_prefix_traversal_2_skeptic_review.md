@@ -31,7 +31,7 @@
 
 Each entry resolves to `sdlc-harness/skeptic_reviews/fix_artifacts_prefix_traversal_2_skeptic_review/finding_<K>.md` through its `**Finding K**` reference.
 
-1. [ ] **Finding 1** — Make the output store's fence recognise the state directory by identity, so a case-changed spelling is refused, and drop the "except by case" limit from the docs _(layer: adapters, tests, general)_
+1. [x] **Finding 1** — Make the output store's fence recognise the state directory by identity, so a case-changed spelling is refused, and drop the "except by case" limit from the docs _(layer: adapters, tests, general)_
 
 ---
 

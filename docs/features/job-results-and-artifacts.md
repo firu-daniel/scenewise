@@ -60,7 +60,7 @@
 - Provenance of `audio_wav`: `MediaTool.audio_track` extracts the track inside `src/scenewise/app/audio.py` (`acquire_audio`). `src/scenewise/app/stages.py` (`audio`) reads its bytes. `src/scenewise/app/runner.py` (`run_job`) keeps the bytes from the `AUDIO` stage only and puts them on `Analysis.audio_wav`.
 - **Edge cases:**
   - **Artifacts can be orphaned.** `publish` runs before the fenced terminal write. If that write loses (`WriteConflictError` in `_finish`), the files stay on disk and no record refers to them. A released attempt (a `RetryableError` such as `storage_unavailable` on the `result.json` write) can leave a half-written `a{n}/`, for example `audio.wav` without `result.json`.
-  - **Other spellings of the state prefix are refused.** `artifacts_prefix` refuses `..` and similar spellings on the normalised URI, and the output store's fence refuses symlinks and parent aliases into the state directory; the remaining case-insensitive-file-system limit is in `docs/concepts/storage-and-uri-policy.md` (Gotchas).
+  - **Other spellings of the state prefix are refused.** `artifacts_prefix` refuses `..` and similar spellings on the normalised URI. The output store's fence refuses symlinks, parent aliases and case-changed spellings into the state directory (`docs/concepts/storage-and-uri-policy.md` (Gotchas)).
   - `result.json` is pretty-printed (`indent=2`). The record and status documents are compact.
   - `external_ref` in `result.json` is the request's map, re-sorted by key on its way through `to_domain`.
 
