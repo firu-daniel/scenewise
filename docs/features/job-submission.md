@@ -39,7 +39,10 @@
 - `src/scenewise/app/delivery.py` (`_attempt`): **claim**. Writes `RUNNING{attempt, lease_until=now+lease, request_digest, external_ref}` with `if_generation=<read generation>`. The returned generation is the attempt's fencing token.
 - `src/scenewise/app/delivery.py` (`_run`): parse (`mapping.to_domain`) → `run_job` with `deadline = monotonic + attempt_budget` → `publish`. A `RetryableError` propagates. Any other error gives a terminal `FAILED` record with that error's code (`unexpected` for a non-`ScenewiseError`).
 - `src/scenewise/app/delivery.py` (`_finish`, `_release`, `_give_up`): the record writes that end a delivery. `_finish` writes the terminal record under the claim token. `_give_up` writes the terminal `failed` / `attempts_exhausted` record under the generation read from the store (no claim exists on that path). On a `WriteConflictError` either one answers `TryLater(job_in_progress, 30 s)` (`RETRY_AFTER_CONFLICT`). `_release` handles a retryable error that still has attempts left: it writes the released `running` record with `lease_until=now` under the token, so the record reads `retry_wait`. It answers `TryLater` with the original retryable error (for example `storage_unavailable`) and `RETRY_AFTER_CONFLICT`, whether or not that write conflicts; a conflict is only logged as `attempt_superseded`.
-- `src/scenewise/app/delivery.py` (`artifacts_prefix`, `job_prefix`, `record_uri`): the path rules (see the stored data below). A `uri_prefix` at or under the state prefix is `InputError(code="uri_not_allowed")`, which makes the job `failed`.
+- `src/scenewise/app/delivery.py` (`artifacts_prefix`, `job_prefix`, `record_uri`): the path rules (see the stored data below). Each refusal is `InputError(code="uri_not_allowed")`, which makes the job `failed`:
+  - **Shape** (`_shape_refusal`, tested on the raw string): a `uri_prefix` with a `?` or `#`, one that `urlsplit` cannot parse, or one whose path is relative is refused. An empty query or fragment counts too, because the store reads only the path and every job would share one file.
+  - **State prefix** (`_location`): the job folder `{uri_prefix}/{job_id}`, not just the requested prefix, is compared with the state prefix. Both are normalised first: scheme and host case, `localhost` treated as an empty `file` host, percent-escapes, dot segments and repeated slashes. When scheme and host match, a job folder at the state prefix, under it, or containing it is refused. So a parent of the state directory plus a job id equal to the state directory's basename is refused, and so is a job folder whose `a{attempt}` subfolder would be the state directory. A parent prefix with any other job id is accepted. The comparison is URI-level only and follows no symlink.
+  - The accepted folder is returned in the caller's own spelling, not the normalised one. Symlinks, other spellings of a parent directory, and which other roots are writable are left to the output store (see `LocalBlobStore` below).
 - `src/scenewise/app/publish.py` (`publish`, `attempt_prefix`): writes `audio.wav`, if one was produced, and `result.json` under `{prefix}/a{attempt}/`, then returns the `result_uri`. It never touches the record.
 - `src/scenewise/app/runner.py` (`run_job`): runs the requested stages. Only `audio` is wired today. See [[audio-stage]].
 - `src/scenewise/app/contract/envelope.py` (`parse`, `request_digest`): a lenient pre-parse of `job_id`, `schema_version` and `external_ref`. A non-`str→str` `external_ref` becomes `None` here and is not an error. `request_digest` is the sha256 of `json.dumps(document, sort_keys=True, separators=(",", ":"))`.
@@ -59,7 +62,8 @@
   ProblemV1    { type:"about:blank", title, status, detail, code, category, retryable }
   ```
 ### adapters
-- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the only `BlobStore` so far, and `file://` only. It keeps each object's generation in a sidecar `.name.meta.json`. A `write` with an `if_generation` that does not match raises `WriteConflictError`. An OS failure is `RetryableError(code="storage_unavailable")`. A URI outside its roots is `InputError(code="uri_not_allowed")`.
+- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the only `BlobStore` so far, and `file://` only. It keeps each object's generation in a sidecar `.name.meta.json`. A `write` with an `if_generation` that does not match raises `WriteConflictError`. An OS failure is `RetryableError(code="storage_unavailable")`. A URI outside its roots, or under an `excluded` path, is `InputError(code="uri_not_allowed")`.
+- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore.__init__`, `LocalBlobStore._path`, `_enters`, `_spelt`): a `fenced` root can be entered only by a URI spelt inside it. `_path` resolves the requested path. If the resolved path lands in a fenced root, by name or by `samefile` identity (`_enters`), but the lexically normalised spelling of the request (`_spelt`, which touches no file system) is not inside that root's own spelling, the URI is `uri_not_allowed`. This refuses a symlink, a parent alias, or a case-changed spelling on a case-insensitive file system that would reach the state directory.
 ### service
 - `src/scenewise/service/http/routes.py` (`post_job`, `_state`): a thin route that delegates to `push.push` with the `ServiceState`.
 - `src/scenewise/service/http/push.py` (`push`): `read_body` with the byte limit, `envelopes.parse`, binding the Cloud Tasks headers to the log context (`_log_context`, `_TASK_HEADERS`), `limiter.acquire_nowait()` (429 on `WouldBlock`), then `_admitted`, and `limiter.release()` in `finally`.
@@ -69,7 +73,7 @@
 - `src/scenewise/service/http/state.py` (`ServiceState`) and `src/scenewise/service/http/app.py` (`create_app`): the lifespan builds `deps`, `DeliveryPolicy(state_prefix, attempt_budget)`, `anyio.CapacityLimiter(max_jobs)` and `Watchdog(limit_s=attempt_budget_s + watchdog_grace_s)` once per process.
 - `src/scenewise/service/http/health.py` (`Watchdog`): while a submitted job runs past budget + grace, `/healthz` returns 503 so the platform replaces the instance.
 - `src/scenewise/service/config.py` (`ServiceSettings`): `max_jobs`, `max_body_bytes`, `attempt_budget_s` (1500), `watchdog_grace_s` (120), `dispatch_deadline_s` (1800), `lease_margin_s` (120), `max_attempts`, `state_prefix`, `artifact_roots`. The lease is `lease_s = dispatch_deadline_s + lease_margin_s`. `_timing` rejects any configuration where budget + grace + probe window ≥ `dispatch_deadline_s`.
-- `src/scenewise/service/bootstrap.py` (`_stores`): builds the output store (records and artifacts) over the state prefix plus `artifact_roots`. The input store is separate and excludes those roots. Any scheme other than `file://` is `ConfigurationError(code="store_unavailable")`.
+- `src/scenewise/service/bootstrap.py` (`_stores`): builds the output store (records and artifacts) over the state prefix plus `artifact_roots`, with `fenced=(state_path,)`, so an artifact URI cannot reach the state directory through a symlink or another spelling of its path. The input store is separate and excludes those roots. Any scheme other than `file://` is `ConfigurationError(code="store_unavailable")`.
 ### package
 - `src/scenewise/ports.py` (`BlobStore`, `Blob`, `ABSENT_GENERATION`, `WriteConflictError`): the compare-and-swap contract every record write relies on. `if_generation=0` means "write only if absent".
 - **Stored data** (in the output `BlobStore`; `src/scenewise/app/delivery.py` owns every record write):
@@ -83,7 +87,9 @@
 - `ServiceSettings.state_prefix` defaults to `./.scenewise/state` as a `file://` URI (`src/scenewise/service/config.py` `_default_state_prefix`).
 ### tests
 - `tests/e2e/test_http.py`: the full push path, through `TestClient` over generated media. It covers duplicate delivery, `test_unreadable_record` (a 200 rejection), `test_streamed_body_over_the_limit_is_413`, `test_full_admission_is_429`, `test_live_lease_is_503` and `test_storage_down_is_503`.
-- `tests/e2e/test_isolation.py`: `uri_prefix` isolation between jobs and the state prefix.
+- `tests/e2e/test_isolation.py`: `uri_prefix` isolation between jobs and the state prefix, including `test_cross_job_overwrite_is_refused` and `test_a_symlink_into_the_state_prefix_is_refused`.
+- `tests/unit/test_delivery.py`: also covers the `artifacts_prefix` rules, such as `test_a_prefix_whose_job_folder_is_the_state_prefix_is_refused`, `test_a_job_folder_that_contains_the_state_prefix_is_refused` and `test_a_prefix_with_a_query_fragment_or_relative_path_is_refused`.
+- `tests/contract/test_blobstore_local.py`: the `LocalBlobStore` contract, including the fence.
 - `tests/unit/test_delivery.py`, `tests/unit/test_jobs.py`, `tests/unit/test_envelope.py`, `tests/unit/test_mapping.py`, `tests/unit/test_publish.py`: the delivery protocol, `decide_attempt`, envelope parsing and digest, the wire mapping, and attempt paths.
 - `tests/unit/test_service.py`: the watchdog and the settings timing.
 ### general
@@ -114,10 +120,11 @@
 - `src/scenewise/domain/results.py` (`job_state`): `succeeded` vs `partial` from the stage outcomes
 - `src/scenewise/app/deps.py` (`Dependencies`): the store and the always-`None` notifier
 - `src/scenewise/ports.py` (`BlobStore`): compare-and-swap storage contract
-- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the `file://` store
+- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the `file://` store and its state-directory fence
 - `tests/e2e/test_http.py`: end-to-end push-path tests
 - `tests/e2e/test_isolation.py`: `uri_prefix` and state-prefix isolation tests
-- `tests/unit/test_delivery.py`: delivery protocol unit tests
+- `tests/unit/test_delivery.py`: delivery protocol and `artifacts_prefix` unit tests
+- `tests/contract/test_blobstore_local.py`: `LocalBlobStore` contract tests, including the fence
 
 ## Related
-- [[job-status]] · [[audio-stage]] · [[job-lifecycle-and-timing]] · [[error-model]] · [[configuration]]
+- [[job-status]] · [[audio-stage]] · [[job-lifecycle-and-timing]] · [[error-model]] · [[configuration]] · [[storage-and-uri-policy]]
