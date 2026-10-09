@@ -9,7 +9,7 @@
 - [ ] `audio-stage` · feature · docs/features/audio-stage.md
       title: Audio Stage
       entry: usecases: src/scenewise/app/audio.py acquire_audio, src/scenewise/app/stages.py audio, src/scenewise/app/runner.py _audio_stage, _dispatch ; domain: src/scenewise/domain/inputs.py AudioFile, AudioSegments, AudioManifest, NoAudio ; ports: BlobStore materialise (deps.inputs), MediaTool probe, audio_track ; adapters: src/scenewise/adapters/media/ffmpeg.py FfmpegMediaTool ; contract: src/scenewise/app/contract/requests.py AudioFileV1, NoAudioV1, src/scenewise/app/contract/results.py AudioStageV1 ; stored_data: audio.wav under {prefix}/a{attempt}/
-- [ ] `job-results-and-artifacts` · feature · docs/features/job-results-and-artifacts.md
+- [x] `job-results-and-artifacts` · feature · docs/features/job-results-and-artifacts.md
       title: Job Results and Artifacts
       entry: usecases: src/scenewise/app/publish.py publish, attempt_prefix, src/scenewise/app/delivery.py artifacts_prefix, job_prefix ; contract: src/scenewise/app/contract/mapping.py result_json, src/scenewise/app/contract/results.py JobResultV1, StageResultsV1, ProbedMediaV1, src/scenewise/app/contract/requests.py DeliveryV1, ArtifactSinkV1 ; ports: BlobStore write (deps.store) ; config: ServiceSettings.artifact_roots, state_prefix ; stored_data: result.json and audio.wav under {prefix}/a{attempt}/, result_uri in the job record
 - [ ] `cli-analyse` · feature · docs/features/cli-analyse.md
