@@ -15,7 +15,7 @@
 - [x] `cli-analyse` · feature · docs/features/cli-analyse.md
       title: CLI analyse Command
       entry: cli: scenewise analyse FILE --out DIR [--stage ...] and --version in src/scenewise/service/cli.py main, analyse, _parser, _with_local_root ; entry point: src/scenewise/__main__.py, pyproject.toml [project.scripts] ; usecases: src/scenewise/app/runner.py run_job ; composition: src/scenewise/service/bootstrap.py build_dependencies ; contract: src/scenewise/app/contract/mapping.py result_json ; stored_data: audio.wav written to --out, result document on stdout, no job record
-- [ ] `health-probes` · feature · docs/features/health-probes.md
+- [x] `health-probes` · feature · docs/features/health-probes.md
       title: Health Probes (/healthz, /readyz)
       entry: routes: GET /healthz and GET /readyz in src/scenewise/service/http/routes.py healthz, readyz ; watchdog: src/scenewise/service/http/health.py Watchdog (watch, overdue) ; lifespan: src/scenewise/service/http/app.py create_app ; config: ServiceSettings.attempt_budget_s, watchdog_grace_s, probe_period_s, probe_failure_threshold ; deps: src/scenewise/app/deps.py Dependencies.enabled_stages
 - [ ] `layering-and-ports` · concept · docs/concepts/layering-and-ports.md
