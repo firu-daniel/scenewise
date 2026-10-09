@@ -81,6 +81,75 @@ def test_excluded_paths_inside_a_root(tmp_path: Path) -> None:
     assert caught.value.code == "uri_not_allowed"
 
 
+def _fenced_store(tmp_path: Path) -> LocalBlobStore:
+    out = tmp_path / "out"
+    return LocalBlobStore(roots=[out], fenced=[out / "state"])
+
+
+def test_a_fenced_root_is_reachable_by_its_own_spelling(tmp_path: Path) -> None:
+    store = _fenced_store(tmp_path)
+    state = tmp_path / "out" / "state"
+    uri = (state / "j" / "status.json").as_uri()
+    store.write(uri, b"s", content_type="application/json")
+    blob = store.read(uri)
+    assert blob is not None
+    assert blob.data == b"s"
+    store.write(state.as_uri() + "/x/../j/a.json", b"a", content_type="x")
+    assert (state / "j" / "a.json").read_bytes() == b"a"
+
+
+def test_a_symlink_into_a_fenced_root_is_refused(tmp_path: Path) -> None:
+    victim = tmp_path / "out" / "state" / "victim"
+    victim.mkdir(parents=True)
+    artifacts = tmp_path / "out" / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "link").symlink_to(victim)
+    store = _fenced_store(tmp_path)
+    target = (artifacts / "link" / "attacker" / "a1" / "result.json").as_uri()
+    with pytest.raises(InputError) as caught:
+        store.write(target, b"x", content_type="application/json")
+    assert caught.value.code == "uri_not_allowed"
+    inside = (artifacts / "link" / "x").as_uri()
+    with pytest.raises(InputError) as caught:
+        store.read(inside)
+    assert caught.value.code == "uri_not_allowed"
+    with pytest.raises(InputError) as caught, store.materialise(inside):
+        pass
+    assert caught.value.code == "uri_not_allowed"
+    assert list(victim.iterdir()) == []
+
+
+def test_dot_dot_through_a_symlink_into_a_fenced_root_is_refused(
+    tmp_path: Path,
+) -> None:
+    sub = tmp_path / "out" / "state" / "victim" / "sub"
+    sub.mkdir(parents=True)
+    artifacts = tmp_path / "out" / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "link").symlink_to(sub)
+    store = _fenced_store(tmp_path)
+    # resolve() follows the link before "..": the target is victim/x, the spelling
+    # is out/artifacts/x.
+    with pytest.raises(InputError) as caught:
+        store.write((artifacts / "link").as_uri() + "/../x", b"x", content_type="x")
+    assert caught.value.code == "uri_not_allowed"
+    assert not (sub.parent / "x").exists()
+
+
+def test_a_second_spelling_of_a_parent_cannot_enter_a_fenced_root(
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "out").mkdir()
+    alias = tmp_path / "alias"
+    alias.symlink_to(tmp_path / "out")
+    store = _fenced_store(tmp_path)
+    with pytest.raises(InputError) as caught:
+        store.write((alias / "state" / "x").as_uri(), b"x", content_type="x")
+    assert caught.value.code == "uri_not_allowed"
+    store.write((alias / "artifacts" / "x").as_uri(), b"x", content_type="x")
+    assert (tmp_path / "out" / "artifacts" / "x").read_bytes() == b"x"
+
+
 def test_concurrent_claims_have_one_winner(tmp_path: Path) -> None:
     store = LocalBlobStore(roots=[tmp_path])
     uri = (tmp_path / "status.json").as_uri()
