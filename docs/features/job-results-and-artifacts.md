@@ -11,8 +11,8 @@
   - No `delivery.artifacts.uri_prefix` in the request → `{state_prefix}/{job_id}`, beside the record's `status.json`.
   - A requested `uri_prefix` → `{uri_prefix}/{job_id}`. The job id is always appended, so one job cannot write into another job's folder (`src/scenewise/app/delivery.py` (`artifacts_prefix`)).
 - **Gating:**
-  - A `uri_prefix` equal to the state prefix, or lexically under it, fails the job with `uri_not_allowed` (`src/scenewise/app/delivery.py` (`artifacts_prefix`)).
-  - Any other prefix must resolve below the state prefix's directory or one of `service.artifact_roots`. Otherwise the output store refuses the first write with `uri_not_allowed` (`src/scenewise/adapters/storage/local.py` (`LocalBlobStore._path`); `src/scenewise/service/bootstrap.py` (`_stores`)).
+  - A `uri_prefix` whose job folder equals the state prefix, or lies under it once both are normalised (dot segments, repeated slashes, percent-escapes, scheme and host case, `localhost`), or one with a query, fragment or relative path, fails the job with `uri_not_allowed` (`src/scenewise/app/delivery.py` (`artifacts_prefix`)).
+  - Any other prefix must resolve below the state prefix's directory or one of `service.artifact_roots`. A path that resolves below the state directory must also be spelt below the configured state prefix, so a prefix that reaches it through a symlink or a parent alias is refused too. Otherwise the output store refuses the first write with `uri_not_allowed` (`src/scenewise/adapters/storage/local.py` (`LocalBlobStore._path`); `src/scenewise/service/bootstrap.py` (`_stores`)).
   - Either refusal ends the job `failed` with `error_code: uri_not_allowed`, and nothing is published.
 - **Status inside `result.json`.** `status` is only ever `succeeded` or `partial`. It is `partial` when any stage `Failed`; a skip is not a failure (`src/scenewise/domain/results.py` (`job_state`)). A job that fails as a whole publishes nothing, and its record keeps `result_uri: null` (`src/scenewise/app/delivery.py` (`_run`, `_terminal`)).
 - **Retries.** Every attempt writes to its own `a{n}/` folder. The terminal record's `result_uri` names the folder of the attempt that won (`ARCHITECTURE.md` §7 "names the winning attempt's files"). Folders from earlier attempts are never cleaned up.
@@ -60,13 +60,13 @@
 - Provenance of `audio_wav`: `MediaTool.audio_track` extracts the track inside `src/scenewise/app/audio.py` (`acquire_audio`). `src/scenewise/app/stages.py` (`audio`) reads its bytes. `src/scenewise/app/runner.py` (`run_job`) keeps the bytes from the `AUDIO` stage only and puts them on `Analysis.audio_wav`.
 - **Edge cases:**
   - **Artifacts can be orphaned.** `publish` runs before the fenced terminal write. If that write loses (`WriteConflictError` in `_finish`), the files stay on disk and no record refers to them. A released attempt (a `RetryableError` such as `storage_unavailable` on the `result.json` write) can leave a half-written `a{n}/`, for example `audio.wav` without `result.json`.
-  - **The state-prefix check is lexical.** `artifacts_prefix` compares strings, so a `uri_prefix` such as `{artifact_root}/../state/victim` passes it. The store then resolves the path to below the state directory, which is one of its own roots, and accepts the write. A probe against the current code wrote `state/victim/attacker/a1/result.json`. The job id suffix still stops it from overwriting another job's files, so `tests/e2e/test_isolation.py` passes. But the rule "never under the state prefix" does not hold for `..` spellings.
+  - **Other spellings of the state prefix are refused.** `artifacts_prefix` refuses `..` and similar spellings on the normalised URI, and the output store's fence refuses symlinks and parent aliases into the state directory; the remaining case-insensitive-file-system limit is in `docs/concepts/storage-and-uri-policy.md` (Gotchas).
   - `result.json` is pretty-printed (`indent=2`). The record and status documents are compact.
   - `external_ref` in `result.json` is the request's map, re-sorted by key on its way through `to_domain`.
 
 ### adapters
 - `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the only `BlobStore` so far, `file://` URIs only.
-  - It resolves each path and checks it against its `roots`. A path outside them is `uri_not_allowed`.
+  - It resolves each path and checks it against its `roots`. A path outside them is `uri_not_allowed`. The output store also fences the state directory: a path resolving into it must be spelt inside it, else `uri_not_allowed`.
   - Each write is atomic, keeps a sidecar `.name.meta.json` with the generation and content type, and takes an `flock` on `.name.lock`.
   - An `OSError` becomes `RetryableError(code="storage_unavailable")`.
 
@@ -76,7 +76,7 @@
   - `artifact_roots` is the allow-list of directories that a `uri_prefix` may point into, and defaults to `()`.
   - Environment variables use the `SCENEWISE_` prefix with `__` between groups.
 - `src/scenewise/service/bootstrap.py` (`_stores`) builds two stores:
-  - the output store (`deps.store`) over the state directory plus `artifact_roots`;
+  - the output store (`deps.store`) over the state directory plus `artifact_roots`, with the state directory fenced (`fenced=(state path,)`);
   - the input store (`deps.inputs`), which excludes both, so one job cannot read another job's `audio.wav` as its input.
   - A state prefix that is not `file://` is `ConfigurationError(code="store_unavailable")`.
 - `src/scenewise/service/http/app.py` (`create_app`) passes `state_prefix` into `DeliveryPolicy`.

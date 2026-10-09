@@ -36,7 +36,7 @@ Each entry resolves 1:1 to `sdlc-harness/task_plans/fix_artifacts_prefix_travers
 4. [x] **Task 4** — Unit-test every refused and accepted `uri_prefix` spelling, and pin the job-id segment spellings _(layer: tests)_ _(points: 10)_
 5. [x] **Task 5** — Contract-file tests for the `LocalBlobStore` fence: own spelling allowed, symlink and parent alias refused _(layer: tests)_ _(points: 10)_
 6. [x] **Task 6** — Make `test_cross_job_overwrite_is_refused` assert the refusal and add the symlink spelling end to end _(layer: tests)_ _(points: 15)_
-7. [ ] **Task 7** — Correct `ARCHITECTURE.md` §7, review-r1 row 1 of the skeleton notes, and the two `..` gotchas _(layer: general)_ _(points: 15)_
+7. [x] **Task 7** — Correct `ARCHITECTURE.md` §7, review-r1 row 1 of the skeleton notes, and the two `..` gotchas _(layer: general)_ _(points: 15)_
 8. [ ] **Task 8** — Update the configuration, layering and error-model concept docs for the normalised check and the store fence _(layer: general)_ _(points: 10)_
 
 ## Scope register

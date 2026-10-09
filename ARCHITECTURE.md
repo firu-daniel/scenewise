@@ -480,8 +480,10 @@ Tasks is the queue and owns retries and backoff; nothing runs outside a request.
 compare-and-swap preconditions. Artifacts go to `{artifacts_prefix}/a{attempt}/`: `result.json` plus each stage's
 file, which in the skeleton is the `audio` stage's `audio.wav` (A1; `captions.vtt` arrives with captions).
 `artifacts_prefix` is `{delivery.artifacts.uri_prefix}/{job_id}`, else `{state_prefix}/{job_id}`; the job id is always
-appended, and a `uri_prefix` under the state prefix is refused with `uri_not_allowed` (A6). The terminal record's
-`result_uri` names the winning attempt's files; callers never build paths.
+appended, and a `uri_prefix` whose job folder normalises to the state prefix or below it (dot segments, repeated
+slashes, percent-escapes, `localhost`) is refused with `uri_not_allowed`, as is one with a query, a fragment or a
+relative path; the output store also fences the state directory against symlinks and other spellings (A6). The
+terminal record's `result_uri` names the winning attempt's files; callers never build paths.
 
 **One delivery** (`service/http/push.py`, then `app/delivery.handle_delivery`):
 
@@ -643,7 +645,8 @@ state prefix or an artifact root; the CLI adds the given file's directory. Input
 `service.artifact_roots`.
 `storage/by_scheme.py` enforces this on every access, including URIs inside segment lists and playlists. Not built
 yet: neither `gs://` nor `https://` has a store, and `by_scheme.py` and the GCS store are design only. The skeleton's
-only store is `file://`; each `LocalBlobStore` enforces its own roots and excluded roots, and a state prefix of any
+only store is `file://`; each `LocalBlobStore` enforces its own roots, excluded roots and fenced roots (a fenced root
+is reachable only through its own spelling; the output store fences the state directory), and a state prefix of any
 other scheme fails start-up with `store_unavailable` (A6).
 
 **Logging.** structlog with the stdlib `ProcessorFormatter`, so library logs are JSON too. Through `contextvars`,
