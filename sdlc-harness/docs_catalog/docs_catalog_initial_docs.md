@@ -18,7 +18,7 @@
 - [x] `health-probes` · feature · docs/features/health-probes.md
       title: Health Probes (/healthz, /readyz)
       entry: routes: GET /healthz and GET /readyz in src/scenewise/service/http/routes.py healthz, readyz ; watchdog: src/scenewise/service/http/health.py Watchdog (watch, overdue) ; lifespan: src/scenewise/service/http/app.py create_app ; config: ServiceSettings.attempt_budget_s, watchdog_grace_s, probe_period_s, probe_failure_threshold ; deps: src/scenewise/app/deps.py Dependencies.enabled_stages
-- [ ] `layering-and-ports` · concept · docs/concepts/layering-and-ports.md
+- [x] `layering-and-ports` · concept · docs/concepts/layering-and-ports.md
       title: Layering, Ports and the Composition Root
       entry: layers: domain, app, adapters, service, package (ARCHITECTURE.md §2-§4, pyproject.toml [tool.importlinter]) ; ports: src/scenewise/ports.py ; bundle: src/scenewise/app/deps.py Dependencies, Speech, enabled_stages ; composition root: src/scenewise/service/bootstrap.py build_dependencies, _stores ; adapters: src/scenewise/adapters/storage/local.py, src/scenewise/adapters/media/ffmpeg.py, src/scenewise/adapters/media/images.py
 - [x] `wire-contract` · concept · docs/concepts/wire-contract.md
