@@ -33,7 +33,7 @@
 - [x] `stages-and-outcomes` · concept · docs/concepts/stages-and-outcomes.md
       title: Stages, Planning and Outcomes
       entry: domain: src/scenewise/domain/jobs.py StageName, SkipReason, src/scenewise/domain/plan.py ordered, unavailable, PREREQUISITES, src/scenewise/domain/results.py Outcome variants, StageOutcome, Analysis, job_state ; usecases: src/scenewise/app/runner.py run_job, _run_stage, src/scenewise/app/deps.py enabled_stages ; config: ServiceSettings.required_stages ; reference: ARCHITECTURE.md §6
-- [ ] `storage-and-uri-policy` · concept · docs/concepts/storage-and-uri-policy.md
+- [x] `storage-and-uri-policy` · concept · docs/concepts/storage-and-uri-policy.md
       title: Storage and URI Policy
       entry: ports: src/scenewise/ports.py BlobStore, Blob, WriteConflictError ; adapters: src/scenewise/adapters/storage/local.py LocalBlobStore ; composition: src/scenewise/service/bootstrap.py _stores ; usecases: src/scenewise/app/delivery.py record_uri, job_prefix, artifacts_prefix, src/scenewise/app/publish.py attempt_prefix ; config: ServiceSettings.state_prefix, artifact_roots, InputSettings.local_roots ; stored_data: {state_prefix}/{job_id}/status.json, {prefix}/a{attempt}/, sidecar .name.meta.json and .name.lock files
 - [x] `media-processing` · concept · docs/concepts/media-processing.md
