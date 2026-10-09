@@ -1,6 +1,6 @@
 # docs_catalog_initial — documentation checklist
 
-- [ ] `job-submission` · feature · docs/features/job-submission.md
+- [x] `job-submission` · feature · docs/features/job-submission.md
       title: Job Submission (POST /v1/jobs)
       entry: route: POST /v1/jobs in src/scenewise/service/http/routes.py post_job -> src/scenewise/service/http/push.py push, read_body, _admitted, _rejected ; usecases: src/scenewise/app/delivery.py handle_delivery (Finished, Rejected, TryLater) ; contract: src/scenewise/app/contract/envelope.py parse, src/scenewise/app/contract/requests.py JobRequestV1, src/scenewise/app/contract/mapping.py rejection_json ; ports: BlobStore (deps.store) ; service state: src/scenewise/service/http/state.py ServiceState (limiter, watchdog, policy) ; stored_data: job record {state_prefix}/{job_id}/status.json, artifacts {prefix}/a{attempt}/
 - [x] `job-status` · feature · docs/features/job-status.md
