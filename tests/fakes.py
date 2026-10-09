@@ -14,9 +14,7 @@ from scenewise.domain.errors import InputError, InternalError
 from scenewise.domain.jobs import StageName
 from scenewise.domain.media import RGB24_BYTES_PER_PIXEL, Frame, MediaInfo, Tile
 from scenewise.domain.time import Seconds
-from scenewise.ports import Blob, WriteConflictError
-
-SAMPLE_RATE = 16_000
+from scenewise.ports import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE, Blob, WriteConflictError
 
 
 @dataclass(frozen=True, slots=True)
@@ -78,10 +76,10 @@ def wav_bytes(seconds: float) -> bytes:
     """A silent 16 kHz mono pcm_s16le WAV of ``seconds``."""
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as out:
-        out.setnchannels(1)
+        out.setnchannels(AUDIO_CHANNELS)
         out.setsampwidth(2)
-        out.setframerate(SAMPLE_RATE)
-        out.writeframes(b"\0\0" * round(seconds * SAMPLE_RATE))
+        out.setframerate(AUDIO_SAMPLE_RATE)
+        out.writeframes(b"\0\0" * round(seconds * AUDIO_SAMPLE_RATE))
     return buffer.getvalue()
 
 

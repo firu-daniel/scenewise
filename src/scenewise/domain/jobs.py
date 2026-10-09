@@ -3,16 +3,17 @@
 import re
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Literal, NewType, assert_never
+from typing import Final, Literal, NewType, assert_never
 
 from scenewise.domain.inputs import AudioSource, VisualSource
 from scenewise.domain.time import Seconds
 
 JobId = NewType("JobId", str)
 
-JOB_ID_PATTERN = r"^[A-Za-z0-9._:-]{1,200}$"
-_JOB_ID = re.compile(JOB_ID_PATTERN)
-RECORD_SCHEMA_VERSION = "1"
+JOB_ID_PATTERN: Final = r"^[A-Za-z0-9._:-]{1,200}$"
+FIRST_ATTEMPT: Final = 1  # attempts are numbered from 1
+
+_JOB_ID: Final = re.compile(JOB_ID_PATTERN)
 
 
 def job_id(value: str) -> JobId:
@@ -101,7 +102,6 @@ class JobRecord:
     error_code: str | None
     result_uri: str | None
     updated_at: float  # epoch seconds
-    schema_version: str
     scenewise_version: str
     external_ref: tuple[tuple[str, str], ...] | None  # None: absent or unreadable
 
@@ -158,7 +158,7 @@ def decide_attempt(
 ) -> Decision:
     """Decide what one delivery of a request does, from the stored record."""
     if record is None:
-        return Start(attempt=1)
+        return Start(attempt=FIRST_ATTEMPT)
     if record.request_digest != request_digest:
         return Conflict(existing_digest=record.request_digest)
     if record.state is not JobState.RUNNING:

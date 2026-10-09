@@ -9,6 +9,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal
 
+from scenewise.domain.errors import ErrorCode
 from scenewise.domain.jobs import JobId, JobState, SkipReason, StageName
 from scenewise.domain.media import MediaInfo
 from scenewise.domain.speech import LanguageReport
@@ -105,7 +106,7 @@ class Failed:
     input or internal.
     """
 
-    error_code: str
+    error_code: ErrorCode
     category: Literal["input", "internal"]
     detail: str = ""
 

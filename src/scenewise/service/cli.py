@@ -10,21 +10,24 @@ import sys
 import time
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Final
 
 from pydantic import ValidationError
 
 from scenewise import __version__
 from scenewise.app.contract import mapping
+from scenewise.app.publish import AUDIO_FILE_NAME
 from scenewise.app.runner import run_job
 from scenewise.domain.errors import ConfigurationError, ScenewiseError
 from scenewise.domain.inputs import AudioFile
-from scenewise.domain.jobs import Job, JobSpec, StageName, job_id
+from scenewise.domain.jobs import FIRST_ATTEMPT, Job, JobSpec, StageName, job_id
 from scenewise.service import logs
 from scenewise.service.bootstrap import build_dependencies
 from scenewise.service.config import Settings
 
-EXIT_FAILED = 1
-EXIT_CONFIGURATION = 2
+EXIT_OK: Final = 0
+EXIT_FAILED: Final = 1
+EXIT_CONFIGURATION: Final = 2
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -72,14 +75,14 @@ def analyse(
     audio_uri = None
     if analysis.audio_wav is not None:
         out.mkdir(parents=True, exist_ok=True)
-        target = out / "audio.wav"
+        target = out / AUDIO_FILE_NAME
         target.write_bytes(analysis.audio_wav)
         audio_uri = target.resolve().as_uri()
     document = mapping.result_json(
-        analysis, attempt=1, external_ref=(), audio_uri=audio_uri
+        analysis, attempt=FIRST_ATTEMPT, external_ref=(), audio_uri=audio_uri
     )
     sys.stdout.write(document.decode() + "\n")
-    return 0
+    return EXIT_OK
 
 
 def main(argv: Sequence[str] | None = None) -> int:

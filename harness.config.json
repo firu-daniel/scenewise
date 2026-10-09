@@ -17,9 +17,34 @@
     "preset": "python-package",
     "signal": "python-package:packaging-manifest",
     "evidence": "pyproject.toml",
-    "commandFamily": "python"
+    "commandFamily": "python",
+    "review": {
+      "verdict": "applied",
+      "rationale": "Read ARCHITECTURE.md §2-3 and src/scenewise/: the import-linter layers service > (adapters | app) > ports > domain each have a directory, so domain, app, adapters and service were registered as layers ahead of package (src, which keeps ports.py and the top-level modules); tests and the general catch-all are unchanged.",
+      "at": "2026-10-09"
+    }
   },
   "layers": [
+    {
+      "name": "domain",
+      "path": "src/scenewise/domain",
+      "conventions": ".claude/context/domain.md"
+    },
+    {
+      "name": "app",
+      "path": "src/scenewise/app",
+      "conventions": ".claude/context/app.md"
+    },
+    {
+      "name": "adapters",
+      "path": "src/scenewise/adapters",
+      "conventions": ".claude/context/adapters.md"
+    },
+    {
+      "name": "service",
+      "path": "src/scenewise/service",
+      "conventions": ".claude/context/service.md"
+    },
     {
       "name": "package",
       "path": "src",
