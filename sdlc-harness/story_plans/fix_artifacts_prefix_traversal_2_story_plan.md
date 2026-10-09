@@ -30,7 +30,7 @@ Tests and docs are separate single-layer tasks:
 
 Each entry resolves 1:1 to `sdlc-harness/task_plans/fix_artifacts_prefix_traversal_2/task_<K>_plan.md`. The order is bottom-up in the configured layer order (`app` → `adapters` → `service` → `tests` → `general`), with the catch-all layer last.
 
-1. [ ] **Task 1** — Compare the normalised artifact `uri_prefix` with the normalised state prefix in `artifacts_prefix` _(layer: app)_ _(points: 15)_
+1. [x] **Task 1** — Compare the normalised artifact `uri_prefix` with the normalised state prefix in `artifacts_prefix` _(layer: app)_ _(points: 15)_
 2. [ ] **Task 2** — Give `LocalBlobStore` `fenced` roots that a path may enter only by being spelt inside them _(layer: adapters)_ _(points: 10)_
 3. [ ] **Task 3** — Fence the state directory on the output store in `bootstrap._stores` _(layer: service)_ _(points: 5)_
 4. [ ] **Task 4** — Unit-test every refused and accepted `uri_prefix` spelling, and pin the job-id segment spellings _(layer: tests)_ _(points: 10)_

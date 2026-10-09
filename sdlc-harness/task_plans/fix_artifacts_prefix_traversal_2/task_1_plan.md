@@ -42,3 +42,8 @@
   - Refused on shape: `file:state/victim`, `file:///srv/artifacts/x?a=b`, `file:///srv/artifacts/x#f`, `file:///srv/artifacts/x?` (empty query), `file:///srv/artifacts/x#` (empty fragment).
   - Accepted, with the caller's spelling plus `/{job_id}` returned: `file:///srv/statefoo/x` (the boundary is a path segment, not a string prefix), `file:///srv/artifacts/media-1/`, `mem://out/x`, and `file:///srv` with job id `other` (returns `file:///srv/other`).
 - `grep -n "resolve\|realpath\|os\.path" src/scenewise/app/delivery.py` finds nothing. Filesystem resolution belongs to Task 2.
+
+**Deviations from plan:**
+
+- `urlsplit` raises `ValueError` on some inputs (e.g. `file://[/srv`, an unclosed IPv6 bracket), so two branches were added that the plan did not list. (1) `_shape_refusal` refuses a requested prefix that `urlsplit` cannot parse: `InputError(code="uri_not_allowed", detail="artifacts uri_prefix is not a valid URI")`. (2) `_location` returns `("", "", PurePosixPath("/"))` instead of raising, which is what the plan's "must never raise" requires. That case only comes up when `state_prefix` is misconfigured, and it fails closed: a scheme-less absolute prefix is then refused. Task 4 needs a case for each branch to keep `app` at 100% branch coverage. The refusal checks were moved into a second private helper, `_shape_refusal`, as the complexity bullet allows.
+- Verified: the Verification cases were run against the new code with a scratch probe (`bash harness-scripts/scratch-run.sh sdlc-harness/scratch/t1_cases.py`). Every case gave the expected answer.
