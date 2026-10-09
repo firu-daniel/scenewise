@@ -64,23 +64,6 @@ Use this map to find which documents to read first for a task:
 
 ## Gotchas / constraints
 
-### Link aliases
-
-Some documents were written before the documents they link to existed, so their `Related` lines use slugs that no document has. The table below says which existing document covers each one. It is based on what each target document covers.
-
-| Alias used in a `Related` line | Used by | Read instead |
-|---|---|---|
-| `[[job-delivery]]`, `[[job-delivery-and-records]]`, `[[job-record-and-fencing]]` | audio-stage, job-results-and-artifacts, job-submission | [job-lifecycle-and-timing](concepts/job-lifecycle-and-timing.md) |
-| `[[http-push-jobs]]` | cli-analyse | [job-submission](features/job-submission.md) |
-| `[[artifact-publishing]]`, `[[result-document]]` | audio-stage, cli-analyse | [job-results-and-artifacts](features/job-results-and-artifacts.md) |
-| `[[input-blob-store]]`, `[[blob-store-input-output-split]]`, `[[blob-storage-and-uri-policy]]` | audio-stage, cli-analyse, job-results-and-artifacts | [storage-and-uri-policy](concepts/storage-and-uri-policy.md) |
-| `[[media-tool-port]]` | audio-stage | [media-processing](concepts/media-processing.md) |
-| `[[composition-root]]` | cli-analyse | [layering-and-ports](concepts/layering-and-ports.md) |
-| `[[settings]]` | cli-analyse, job-submission | [configuration](concepts/configuration.md) |
-| `[[error-categories]]` | cli-analyse | [error-model](concepts/error-model.md) |
-| `[[wire-contract-v1]]` | job-results-and-artifacts | [wire-contract](concepts/wire-contract.md) |
-| `[[captions-stage]]` | audio-stage | No document yet: the captions stage is not wired (`StageName` docstring). |
-
 ### Open `⚠️ unverified` items carried by the documents
 
 - [health-probes](features/health-probes.md): the repository tracks no deployment manifest that declares the Cloud Run probes, so the real probe configuration belongs to the adopter. Whether probes take a request slot at `concurrency = max_jobs` (Q-19), and whether torch releases the GIL (Q-5), are open.

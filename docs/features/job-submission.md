@@ -120,4 +120,4 @@
 - `tests/unit/test_delivery.py`: delivery protocol unit tests
 
 ## Related
-- [[job-status]] · [[audio-stage]] · [[job-record-and-fencing]] · [[error-model]] · [[settings]]
+- [[job-status]] · [[audio-stage]] · [[job-lifecycle-and-timing]] · [[error-model]] · [[configuration]]

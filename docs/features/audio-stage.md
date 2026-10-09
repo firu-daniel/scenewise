@@ -140,4 +140,5 @@
 - `tests/unit/test_audio.py`, `tests/unit/test_runner.py`, `tests/contract/mediatool_contract.py`, `tests/e2e/test_cli.py`: coverage
 
 ## Related
-- [[job-delivery]] · [[artifact-publishing]] · [[input-blob-store]] · [[media-tool-port]] · [[captions-stage]]
+- [[job-lifecycle-and-timing]] · [[job-results-and-artifacts]] · [[storage-and-uri-policy]] · [[media-processing]]
+- The captions stage, which needs this track (`src/scenewise/domain/plan.py` (`PREREQUISITES`)), has no document yet: it is not wired (`src/scenewise/domain/jobs.py` (`StageName`)).

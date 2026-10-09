@@ -55,7 +55,7 @@
   ErrorInfoV1   { code, category: "input"|"retryable"|"internal", retryable, message, stage }
   ```
   Output documents only grow within `schema_version` "1", and clients ignore unknown fields (module docstring). The job-level `media` is `null` when the request had no audio input to probe. The stage-level `audio.uri` is `null` when no track was written. For a failed stage, `reason` holds the error code (`_stage_fields`), and `ErrorInfoV1.retryable` is always `false`.
-- Request side (`src/scenewise/app/contract/requests.py`): `DeliveryV1` holds `artifacts: ArtifactSinkV1`, where `uri_prefix: str | None` has `min_length=1`. `to_domain` copies it into `Job.artifacts_prefix`.
+- Request side (`src/scenewise/app/contract/requests.py`): `DeliveryV1` holds `artifacts: ArtifactSinkV1`, where `uri_prefix: str | None` has `min_length=1`. `src/scenewise/app/contract/mapping.py` (`to_domain`) copies it into `Job.artifacts_prefix`.
 - The stored record (`src/scenewise/app/contract/records.py` (`JobRecordV1`)) has the field `result_uri: str | None`.
 - Provenance of `audio_wav`: `MediaTool.audio_track` extracts the track inside `src/scenewise/app/audio.py` (`acquire_audio`). `src/scenewise/app/stages.py` (`audio`) reads its bytes. `src/scenewise/app/runner.py` (`run_job`) keeps the bytes from the `AUDIO` stage only and puts them on `Analysis.audio_wav`.
 - **Edge cases:**
@@ -103,7 +103,7 @@
 ## Anchor files
 - `src/scenewise/app/publish.py` (`publish`, `attempt_prefix`): writes the attempt folder.
 - `src/scenewise/app/delivery.py` (`artifacts_prefix`, `job_prefix`, `record_uri`, `_run`, `_finish`, `job_status`): path rules, orchestration, `result_uri`.
-- `src/scenewise/app/contract/mapping.py` (`result_json`, `_stage_fields`, `_media`, `status_json`): builds the documents.
+- `src/scenewise/app/contract/mapping.py` (`to_domain`, `result_json`, `_stage_fields`, `_media`, `status_json`): copies the request's prefix into the job and builds the documents.
 - `src/scenewise/app/contract/results.py` (`JobResultV1`, `StageResultsV1`, `AudioStageV1`, `ProbedMediaV1`, `ErrorInfoV1`, `JobStatusV1`): output wire models.
 - `src/scenewise/app/contract/requests.py` (`DeliveryV1`, `ArtifactSinkV1`): the request's artifact sink.
 - `src/scenewise/app/contract/records.py` (`JobRecordV1`): the stored `result_uri`.
@@ -120,4 +120,4 @@
 - `tests/unit/test_publish.py`, `tests/unit/test_delivery.py`, `tests/e2e/test_isolation.py`, `tests/e2e/test_http.py`, `tests/e2e/test_cli.py`: behaviour pins.
 
 ## Related
-- [[job-delivery-and-records]] · [[audio-stage]] · [[blob-storage-and-uri-policy]] · [[cli-analyse]] · [[wire-contract-v1]]
+- [[job-lifecycle-and-timing]] · [[audio-stage]] · [[storage-and-uri-policy]] · [[cli-analyse]] · [[wire-contract]]
