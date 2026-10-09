@@ -3,7 +3,7 @@
 - [ ] `job-submission` · feature · docs/features/job-submission.md
       title: Job Submission (POST /v1/jobs)
       entry: route: POST /v1/jobs in src/scenewise/service/http/routes.py post_job -> src/scenewise/service/http/push.py push, read_body, _admitted, _rejected ; usecases: src/scenewise/app/delivery.py handle_delivery (Finished, Rejected, TryLater) ; contract: src/scenewise/app/contract/envelope.py parse, src/scenewise/app/contract/requests.py JobRequestV1, src/scenewise/app/contract/mapping.py rejection_json ; ports: BlobStore (deps.store) ; service state: src/scenewise/service/http/state.py ServiceState (limiter, watchdog, policy) ; stored_data: job record {state_prefix}/{job_id}/status.json, artifacts {prefix}/a{attempt}/
-- [ ] `job-status` · feature · docs/features/job-status.md
+- [x] `job-status` · feature · docs/features/job-status.md
       title: Job Status (GET /v1/jobs/{job})
       entry: route: GET /v1/jobs/{job} in src/scenewise/service/http/routes.py get_job ; usecases: src/scenewise/app/delivery.py job_status, record_uri ; contract: src/scenewise/app/contract/mapping.py status_json, record_from_json, src/scenewise/app/contract/results.py JobStatusV1 ; domain: src/scenewise/domain/jobs.py wire_status, job_id ; ports: BlobStore read ; stored_data: job record {state_prefix}/{job_id}/status.json
 - [ ] `audio-stage` · feature · docs/features/audio-stage.md
