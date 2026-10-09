@@ -1,15 +1,31 @@
 import json
+from typing import get_args, get_type_hints
 
 import pytest
+from pydantic import BaseModel
 
 from scenewise.app.contract import mapping
-from scenewise.domain.errors import InputError, InternalError
+from scenewise.app.contract.records import JobRecordV1
+from scenewise.app.contract.requests import StageNameV1
+from scenewise.app.contract.results import (
+    ErrorInfoV1,
+    JobResultV1,
+    ProblemV1,
+    StatusV1,
+)
+from scenewise.domain.errors import (
+    Category,
+    InputError,
+    InternalError,
+    JobIdConflictError,
+)
 from scenewise.domain.inputs import AudioFile, NoAudio
 from scenewise.domain.jobs import (
     JobRecord,
     JobState,
     SkipReason,
     StageName,
+    WireStatus,
     job_id,
 )
 from scenewise.domain.results import (
@@ -91,7 +107,6 @@ def _record(external_ref: tuple[tuple[str, str], ...] | None) -> JobRecord:
         error_code=None,
         result_uri="mem://out/a2/result.json",
         updated_at=5.0,
-        schema_version="1",
         scenewise_version="0.1.0",
         external_ref=external_ref,
     )
@@ -118,7 +133,7 @@ def test_status_json(ref: tuple[tuple[str, str], ...] | None) -> None:
 
 
 def test_problem_and_rejection() -> None:
-    error = InputError(code="job_id_conflict")
+    error = JobIdConflictError()
     problem = mapping.problem(error, status=409, title="Conflict")
     assert (problem.code, problem.detail, problem.retryable) == (
         "job_id_conflict",
@@ -178,7 +193,9 @@ def test_result_skipped_and_failed() -> None:
         report=LanguageReport(dominant=None, detected=("und",), partial=False),
     )
     assert _result(_analysis(_outcome(language)))["status"] == "succeeded"
-    failed = _result(_analysis(_outcome(Failed(error_code="x", category="input"))))
+    failed = _result(
+        _analysis(_outcome(Failed(error_code="corrupt_media", category="input")))
+    )
     assert failed["status"] == "partial"
 
 
@@ -193,3 +210,30 @@ def test_result_without_media_or_stages() -> None:
     result = _result(Analysis(job_id=job_id("j"), media=None, outcomes=()))
     assert result["media"] is None
     assert result["stages"] == {"audio": None}
+
+
+def _field_values(model: type[BaseModel], name: str) -> set[str]:
+    return set(get_args(model.model_fields[name].annotation))
+
+
+def test_wire_stage_names_mirror_the_domain() -> None:
+    assert set(get_args(StageNameV1.__value__)) == {s.value for s in StageName}
+
+
+def test_wire_record_states_mirror_the_domain() -> None:
+    assert _field_values(JobRecordV1, "state") == {s.value for s in JobState}
+
+
+def test_wire_statuses_mirror_the_domain() -> None:
+    assert set(get_args(StatusV1.__value__)) == set(get_args(WireStatus.__value__))
+
+
+def test_wire_error_categories_mirror_the_domain() -> None:
+    assert _field_values(ProblemV1, "category") == set(get_args(Category.__value__))
+    # the wire also allows ``retryable``, which a failed stage never carries
+    stage_categories = set(get_args(get_type_hints(Failed)["category"]))
+    assert stage_categories <= _field_values(ErrorInfoV1, "category")
+
+
+def test_wire_result_statuses_are_job_states() -> None:
+    assert _field_values(JobResultV1, "status") <= {s.value for s in JobState}

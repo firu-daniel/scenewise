@@ -2,17 +2,18 @@
 
 import functools
 import time
-from http import HTTPStatus
+from typing import Final, assert_never
 
 import anyio
 import structlog
 from fastapi import Request
 from fastapi.responses import Response
 
+from scenewise.app.constants import JSON_MEDIA_TYPE
 from scenewise.app.contract import envelope as envelopes
 from scenewise.app.contract import mapping
 from scenewise.app.contract.envelope import Envelope
-from scenewise.app.delivery import Finished, TryLater, handle_delivery
+from scenewise.app.delivery import Finished, Rejected, TryLater, handle_delivery
 from scenewise.domain.errors import (
     CapacityError,
     InputError,
@@ -23,17 +24,21 @@ from scenewise.domain.errors import (
 )
 from scenewise.domain.jobs import AttemptInfo
 from scenewise.domain.time import Seconds
-from scenewise.service.http.problems import http_status, problem_response
+from scenewise.service.http.problems import (
+    http_status,
+    problem_response,
+    problem_title,
+)
 from scenewise.service.http.state import ServiceState
 
 log = structlog.get_logger(__name__)
 
-RETRY_AFTER_BUSY_S = 30.0
-_TASK_HEADERS = {
-    "x-cloudtasks-taskname": "task_name",
-    "x-cloudtasks-taskretrycount": "transport_retry",
-    "x-cloud-trace-context": "trace",
-}
+RETRY_AFTER_BUSY_S: Final = 30.0
+_TASK_HEADERS: Final = (  # (request header, log context key)
+    ("x-cloudtasks-taskname", "task_name"),
+    ("x-cloudtasks-taskretrycount", "transport_retry"),
+    ("x-cloud-trace-context", "trace"),
+)
 
 
 async def read_body(request: Request, *, limit: int) -> bytes:
@@ -58,15 +63,15 @@ def _rejected(job: str, error: ScenewiseError) -> Response:
     """200 + problem: a non-retryable failure must not start a retry loop."""
     status = http_status(error)
     body = mapping.rejection_json(
-        job, error, status=status, title=HTTPStatus(status).phrase
+        job, error, status=status, title=problem_title(error, status)
     )
-    return Response(content=body, media_type="application/json")
+    return Response(content=body, media_type=JSON_MEDIA_TYPE)
 
 
 def _log_context(request: Request) -> dict[str, str]:
     return {
         key: request.headers[header].split("/")[0]
-        for header, key in _TASK_HEADERS.items()
+        for header, key in _TASK_HEADERS
         if header in request.headers
     }
 
@@ -100,9 +105,13 @@ async def _admitted(state: ServiceState, envelope: Envelope, raw: bytes) -> Resp
         return _rejected(envelope.job_id, InternalError(code="unexpected"))
     match outcome:
         case Finished(body=body):
-            return Response(content=body, media_type="application/json")
+            return Response(content=body, media_type=JSON_MEDIA_TYPE)
+        case Rejected(error=error):
+            return _rejected(envelope.job_id, error)
         case TryLater(error=error, retry_after=retry_after):
             return problem_response(error, retry_after=retry_after)
+        case _:
+            assert_never(outcome)
 
 
 async def push(request: Request, state: ServiceState) -> Response:

@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 import wave
+from importlib.metadata import version
 from pathlib import Path
 
 import pytest
@@ -81,4 +82,5 @@ def test_invalid_settings_are_a_configuration_error(inputs: Path) -> None:
 def test_version() -> None:
     run = _cli("--version")
     assert run.returncode == 0
-    assert run.stdout.strip() == "0.1.0"
+    # The installed distribution's version, not a literal: a bump needs no edit here.
+    assert run.stdout.strip() == version("scenewise")

@@ -2,7 +2,8 @@
 
 Always an argv list, never a shell; always a timeout; inputs are local paths passed with
 the ``file:`` protocol under ``-protocol_whitelist file,pipe``, so ffmpeg never fetches
-anything itself. Exit codes and the stderr tail map to ``InputError("corrupt_media")``.
+anything itself. Exit codes and the stderr tail map to
+``InputError(code="corrupt_media")``.
 """
 
 import json
@@ -14,22 +15,24 @@ import time
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 from scenewise.domain.errors import ConfigurationError, InputError, InternalError
 from scenewise.domain.media import RGB24_BYTES_PER_PIXEL, Frame, MediaInfo
 from scenewise.domain.time import Seconds
+from scenewise.ports import AUDIO_CHANNELS, AUDIO_SAMPLE_RATE
 
-SAMPLE_RATE = 16_000
-PROBE_TIMEOUT_S = 60.0
-_STDERR_TAIL = 500
-_VERSION = re.compile(r"version n?(\d+)\.")
+PROBE_TIMEOUT_S: Final = 60.0
+_STDERR_TAIL: Final = 500
+_FRAMES_PER_SEEK: Final = 1
+_MIN_SIDE_PX: Final = 1
+_VERSION: Final = re.compile(r"version n?(\d+)\.")
 # Before every -i: ffmpeg may open only local files and pipes, and only through these
 # demuxers. Without the format list, an input whose content is an HLS playlist makes
 # the hls demuxer open other local files outside every store allow-list.
-DEMUXERS = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,wav,mp3,aac,flac,ogg"
-_PROTOCOLS = ("-protocol_whitelist", "file,pipe", "-format_whitelist", DEMUXERS)
-_INSTALL_HINT = (
+DEMUXERS: Final = "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,wav,mp3,aac,flac,ogg"
+_PROTOCOLS: Final = ("-protocol_whitelist", "file,pipe", "-format_whitelist", DEMUXERS)
+_INSTALL_HINT: Final = (
     "install ffmpeg (apt install ffmpeg, brew install ffmpeg) or set "
     "SCENEWISE_MEDIA__FFMPEG and SCENEWISE_MEDIA__FFPROBE"
 )
@@ -75,7 +78,10 @@ def find_binaries(*, ffmpeg: str, ffprobe: str, min_major: int) -> tuple[str, st
 def scaled_size(width: int, height: int, max_side: int) -> tuple[int, int]:
     """Downscale so the longer side is at most ``max_side``; never upscale."""
     scale = min(1.0, max_side / max(width, height))
-    return max(1, round(width * scale)), max(1, round(height * scale))
+    return (
+        max(_MIN_SIDE_PX, round(width * scale)),
+        max(_MIN_SIDE_PX, round(height * scale)),
+    )
 
 
 def _media_info(doc: dict[str, Any]) -> MediaInfo:
@@ -136,7 +142,8 @@ class FfmpegMediaTool:
             track = Path(tmp) / "track.wav"
             argv = [self._ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
             argv += [*_PROTOCOLS, "-i", _file(source), "-map", "0:a:0", "-vn"]
-            argv += ["-ac", "1", "-ar", str(SAMPLE_RATE), "-c:a", "pcm_s16le"]
+            argv += ["-ac", str(AUDIO_CHANNELS), "-ar", str(AUDIO_SAMPLE_RATE)]
+            argv += ["-c:a", "pcm_s16le"]
             argv += ["-map_metadata", "-1", "-fflags", "+bitexact", "-f", "wav"]
             argv += ["-y", _file(track)]
             self._media(argv, timeout=deadline - time.monotonic())
@@ -159,7 +166,8 @@ class FfmpegMediaTool:
         for t in times:
             argv = [self._ffmpeg, "-nostdin", "-hide_banner", "-loglevel", "error"]
             argv += ["-ss", f"{t:.3f}", *_PROTOCOLS, "-i", _file(path)]
-            argv += ["-frames:v", "1", "-vf", f"scale={width}:{height}"]
+            argv += ["-frames:v", str(_FRAMES_PER_SEEK)]
+            argv += ["-vf", f"scale={width}:{height}"]
             argv += ["-f", "rawvideo", "-pix_fmt", "rgb24", "pipe:1"]
             rgb = self._media(argv, timeout=deadline - time.monotonic())
             if len(rgb) != size:

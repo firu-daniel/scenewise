@@ -10,6 +10,7 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from scenewise.app.constants import SchemaVersionV1
 from scenewise.domain.jobs import JOB_ID_PATTERN
 
 type StageNameV1 = Literal[
@@ -61,7 +62,7 @@ class DeliveryV1(_Input):
 class JobRequestV1(_Input):
     """One job."""
 
-    schema_version: Literal["1"]
+    schema_version: SchemaVersionV1
     job_id: str = Field(pattern=JOB_ID_PATTERN)
     supersedes: str | None = None
     external_ref: dict[str, str] = Field(default_factory=dict)

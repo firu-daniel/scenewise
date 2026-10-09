@@ -36,7 +36,6 @@ def _record(
         error_code=None,
         result_uri=None,
         updated_at=NOW - 10,
-        schema_version="1",
         scenewise_version="0.1.0",
         external_ref=None,
     )

@@ -74,7 +74,20 @@ def test_job_id_reused_for_another_request(client: TestClient, inputs: Path) -> 
     client.post("/v1/jobs", json=_job(inputs))
     response = client.post("/v1/jobs", json=_job(inputs, "tone.m4a"))
     assert response.status_code == 200
-    assert response.json()["problem"]["code"] == "job_id_conflict"
+    assert response.headers["content-type"] == "application/json"
+    assert response.json() == {
+        "job_id": "um-1-r1",
+        "outcome": "rejected",
+        "problem": {
+            "type": "about:blank",
+            "title": "Job id already used",
+            "status": 409,
+            "detail": "job id used for another request",
+            "code": "job_id_conflict",
+            "category": "input",
+            "retryable": False,
+        },
+    }
 
 
 @pytest.mark.parametrize(
@@ -190,7 +203,6 @@ def test_live_lease_is_503(client: TestClient, inputs: Path, state: Path) -> Non
         error_code=None,
         result_uri=None,
         updated_at=time.time(),
-        schema_version="1",
         scenewise_version="0.1.0",
         external_ref=None,
     )

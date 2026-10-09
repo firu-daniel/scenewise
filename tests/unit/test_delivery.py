@@ -10,12 +10,15 @@ from scenewise.app.delivery import (
     DeliveryOutcome,
     DeliveryPolicy,
     Finished,
+    Rejected,
     TryLater,
     handle_delivery,
     job_prefix,
+    job_status,
+    record_uri,
 )
 from scenewise.app.deps import Dependencies
-from scenewise.domain.errors import RetryableError
+from scenewise.domain.errors import InternalError, JobIdConflictError, RetryableError
 from scenewise.domain.jobs import AttemptInfo, JobRecord, JobState
 from scenewise.domain.time import Seconds
 from scenewise.ports import WriteConflictError
@@ -119,7 +122,6 @@ def _seed(store: InMemoryBlobStore, *, attempt: int, lease_until: float) -> None
         error_code=None,
         result_uri=None,
         updated_at=NOW,
-        schema_version="1",
         scenewise_version="0.1.0",
         external_ref=None,
     )
@@ -128,6 +130,33 @@ def _seed(store: InMemoryBlobStore, *, attempt: int, lease_until: float) -> None
 
 def test_job_prefix() -> None:
     assert job_prefix("mem://state/", "j") == "mem://state/j"
+
+
+def test_record_lives_in_status_json_under_the_job_folder() -> None:
+    assert record_uri("mem://state/", "j-1") == STATUS
+
+
+def test_job_status_reads_the_record() -> None:
+    store = _store()
+    delivered = _status(_deliver(fake_dependencies(store=store)))
+    status = job_status("j-1", store=store, state_prefix="mem://state", now=NOW)
+    assert status is not None
+    assert json.loads(status) == delivered
+
+
+@pytest.mark.parametrize("job", ["j-2", "..", "not a job id"])
+def test_job_status_of_no_such_job_is_none(job: str) -> None:
+    store = _store()
+    _deliver(fake_dependencies(store=store))
+    assert job_status(job, store=store, state_prefix="mem://state", now=NOW) is None
+
+
+def test_unreadable_record_is_an_invariant_violation() -> None:
+    store = InMemoryBlobStore()
+    store.write(STATUS, b"{not a record", content_type="application/json")
+    with pytest.raises(InternalError) as caught:
+        job_status("j-1", store=store, state_prefix="mem://state", now=NOW)
+    assert caught.value.code == "invariant_violation"
 
 
 def test_first_delivery_runs_to_a_terminal_record() -> None:
@@ -171,8 +200,10 @@ def test_same_job_id_other_request_is_rejected_without_a_record() -> None:
     deps = fake_dependencies(store=store)
     _deliver(deps)
     before = store.objects[STATUS]
-    rejection = _status(_deliver(deps, _raw(stages=["audio", "audio"])))
-    assert rejection["outcome"] == "rejected"
+    outcome = _deliver(deps, _raw(stages=["audio", "audio"]))
+    assert isinstance(outcome, Rejected)
+    assert isinstance(outcome.error, JobIdConflictError)
+    assert outcome.error.code == "job_id_conflict"
     assert store.objects[STATUS] == before
 
 
