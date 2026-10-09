@@ -24,7 +24,7 @@
 - [x] `wire-contract` · concept · docs/concepts/wire-contract.md
       title: The Versioned Wire Contract
       entry: contract: src/scenewise/app/contract/requests.py JobRequestV1, src/scenewise/app/contract/results.py JobResultV1, JobStatusV1, ProblemV1, RejectionV1, src/scenewise/app/contract/records.py JobRecordV1, src/scenewise/app/contract/envelope.py parse, request_digest, _external_ref ; mapping: src/scenewise/app/contract/mapping.py to_domain, record_to_json, record_from_json, status_json, result_json, problem ; constants: src/scenewise/app/constants.py SCHEMA_VERSION_V1, JSON_MEDIA_TYPE
-- [ ] `error-model` · concept · docs/concepts/error-model.md
+- [x] `error-model` · concept · docs/concepts/error-model.md
       title: Error Model and HTTP Mapping
       entry: domain: src/scenewise/domain/errors.py ScenewiseError and subclasses, ErrorCode aliases ; http: src/scenewise/service/http/problems.py http_status, problem_title, problem_response, src/scenewise/service/http/push.py _rejected ; usecases: src/scenewise/app/runner.py _run_stage, src/scenewise/app/delivery.py _run ; contract: src/scenewise/app/contract/mapping.py problem, rejection_json, _stage_fields ; reference: ARCHITECTURE.md §9
 - [x] `job-lifecycle-and-timing` · concept · docs/concepts/job-lifecycle-and-timing.md
