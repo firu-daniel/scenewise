@@ -42,7 +42,7 @@
 - [x] `configuration` · concept · docs/concepts/configuration.md
       title: Configuration and Settings
       entry: settings: src/scenewise/service/config.py Settings, MediaSettings, InputSettings, ServiceSettings, LogSettings ; env: SCENEWISE_ prefix with __ nesting ; consumers: src/scenewise/service/bootstrap.py build_dependencies, src/scenewise/service/http/app.py create_app, src/scenewise/service/cli.py main ; reference: ARCHITECTURE.md §10, README.md Requirements
-- [ ] `logging` · concept · docs/concepts/logging.md
+- [x] `logging` · concept · docs/concepts/logging.md
       title: Logging
       entry: setup: src/scenewise/service/logs.py configure, LogSettings level and format ; context: structlog bound_contextvars in src/scenewise/app/runner.py, src/scenewise/app/delivery.py, src/scenewise/service/http/push.py _log_context (Cloud Tasks headers) ; redaction: src/scenewise/app/contract/mapping.py _validation_summary, src/scenewise/domain/errors.py module docstring ; reference: ARCHITECTURE.md §10
 - [ ] `index` · concept · docs/INDEX.md
