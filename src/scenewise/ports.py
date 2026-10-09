@@ -9,7 +9,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Protocol
+from typing import Final, Protocol
 
 from scenewise.domain.jobs import Callback
 from scenewise.domain.labels import LabelScores
@@ -22,6 +22,10 @@ from scenewise.domain.results import (
 )
 from scenewise.domain.speech import LanguageGuess, SpeechProbabilities
 from scenewise.domain.time import Seconds, TimeSpan
+
+ABSENT_GENERATION: Final = 0  # the generation of an object that does not exist
+AUDIO_SAMPLE_RATE: Final = 16_000  # Hz, of the WAV ``MediaTool.audio_track`` extracts
+AUDIO_CHANNELS: Final = 1  # mono
 
 
 class WriteConflictError(Exception):
@@ -40,10 +44,11 @@ class BlobStore(Protocol):
     """Objects addressed by URI (local files | GCS | https read-only).
 
     Contract: ``read`` of an absent object is ``None``. ``write`` returns the new
-    generation, always > 0; ``if_generation=0`` writes only if the object is absent,
-    any other value only if it is the current generation, else ``WriteConflictError``.
-    A URI outside the store's allow-list is ``InputError("uri_not_allowed")``; a
-    missing input in ``materialise`` is ``InputError("input_unavailable")``.
+    generation, always > 0; ``if_generation=ABSENT_GENERATION`` (0) writes only if
+    the object is absent, any other value only if it is the current generation, else
+    ``WriteConflictError``.
+    A URI outside the store's allow-list is ``InputError(code="uri_not_allowed")``; a
+    missing input in ``materialise`` is ``InputError(code="input_unavailable")``.
     """
 
     def materialise(self, uri: str) -> AbstractContextManager[Path]:
@@ -72,8 +77,8 @@ class MediaTool(Protocol):
     Contract: ``audio_track`` concatenates ``parts`` and extracts ONE 16 kHz mono
     ``pcm_s16le`` WAV, valid inside the context. ``video_frames`` yields one frame per
     time, in order, with the longer side <= ``max_side``. Undecodable input is
-    ``InputError("corrupt_media")``; running out of time is
-    ``InternalError("deadline_exceeded")``. ``deadline`` is a ``time.monotonic()``
+    ``InputError(code="corrupt_media")``; running out of time is
+    ``InternalError(code="deadline_exceeded")``. ``deadline`` is a ``time.monotonic()``
     value.
     """
 

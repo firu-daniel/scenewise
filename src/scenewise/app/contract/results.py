@@ -8,6 +8,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from scenewise.app.constants import SCHEMA_VERSION_V1, SchemaVersionV1
+
 type StatusV1 = Literal["running", "retry_wait", "succeeded", "partial", "failed"]
 
 
@@ -56,7 +58,7 @@ class StageResultsV1(_Output):
 class JobResultV1(_Output):
     """``result.json``, written under the attempt's artifact prefix."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: SchemaVersionV1 = SCHEMA_VERSION_V1
     scenewise_version: str
     job_id: str
     external_ref: dict[str, str]
@@ -70,7 +72,7 @@ class JobResultV1(_Output):
 class JobStatusV1(_Output):
     """The answer of ``POST /v1/jobs`` and ``GET /v1/jobs/{id}``."""
 
-    schema_version: Literal["1"] = "1"
+    schema_version: SchemaVersionV1 = SCHEMA_VERSION_V1
     scenewise_version: str
     job_id: str
     status: StatusV1

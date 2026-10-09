@@ -1,10 +1,13 @@
 # scenewise
 
-<!-- harness:setup-pending -->
-> **Setup is not finished.** The sections below are skeletons, and `/autonomous-sdlc-harness:harness-analyze` was accepted at setup: running it is this session's first action. `/autonomous-sdlc-harness:harness-analyze` is a command of the harness plugin, which `npx autonomous-sdlc-harness init` enabled for this repository in `.claude/settings.json`, so it exists in a session that resolves that plugin. The command removes this block when it has run — or the block can be deleted by hand once these sections are written.
-<!-- /harness:setup-pending -->
+scenewise is a self-hosted Python service for video understanding: captions, summaries, chapters, a moderation second opinion and labels. Adopters run it in their own cloud and call it through one generic HTTP endpoint (`POST /v1/jobs`, Cloud Tasks semantics) or through the `scenewise` command line. It carries no consumer-specific code (`README.md`; `pyproject.toml` `[project]`). It ships as one distribution with one import package, `scenewise`, under `src/` (`ARCHITECTURE.md` §1). Before you touch a file:
 
-_`/autonomous-sdlc-harness:harness-analyze` writes this paragraph from the repository itself — or replace this line by hand: what this project is, who uses it, and anything an agent must know before it touches a file._
+- The import layers and which module may import `scenewise.adapters` are owned by `.claude/context/conventions.md` § Dependency direction. Read it before adding an import.
+- Gate-tool configuration lives in `pyproject.toml`. A gate tool's config file outside it, of a name the `STRAY` pattern in `scripts/check_stray_config.py` lists, fails that script (`.claude/context/conventions.md` § The general layer).
+- ffmpeg and ffprobe must be on `PATH`, or set through `SCENEWISE_MEDIA__FFMPEG` and `SCENEWISE_MEDIA__FFPROBE`. scenewise refuses to start without them (`README.md` "Requirements").
+- The skeleton's departures from `ARCHITECTURE.md` are recorded in `docs/skeleton-notes.md` (`README.md`). Where later departures go is open (`.claude/context/conventions.md` "Not determined").
+
+_Provenance: existing mode. Read `README.md`, `ARCHITECTURE.md` §1–§3 and §16, `pyproject.toml`, `scripts/check_stray_config.py` (`STRAY`), `docs/skeleton-notes.md` and `.claude/context/conventions.md`._
 
 ---
 
@@ -12,9 +15,18 @@ _`/autonomous-sdlc-harness:harness-analyze` writes this paragraph from the repos
 
 | Type | Pattern | Example |
 |---|---|---|
-| _(kind of file)_ | _(the name pattern it follows)_ | _(one real file in this repository that follows it)_ |
+| Source module | `src/scenewise/<layer>/<name>.py`, lowercase snake_case (module-naming rules: `.claude/context/conventions.md` § Where a new responsibility goes) | `src/scenewise/domain/jobs.py` |
+| Adapter | `src/scenewise/adapters/<kind>/<technology>.py`, one subpackage per adapter kind (class naming: `.claude/context/adapters.md`) | `src/scenewise/adapters/media/ffmpeg.py` |
+| Wire-contract module | `src/scenewise/app/contract/<concern>.py` | `src/scenewise/app/contract/requests.py` |
+| Unit test | `tests/unit/test_<subject>.py` | `tests/unit/test_jobs.py` |
+| Port contract mixin | `tests/contract/<port>_contract.py` | `tests/contract/blobstore_contract.py` |
+| Contract test | `tests/contract/test_<port>_<impl>.py` (one-file-per-implementation rule: `.claude/context/tests.md` § Naming) | `tests/contract/test_blobstore_local.py` |
+| End-to-end test | `tests/e2e/test_<surface>.py` | `tests/e2e/test_cli.py` |
+| Test media fixture | `tests/fixtures/<name>.<ext>`, made by `tests/fixtures/generate.sh` | `tests/fixtures/clip.mp4` |
+| Gate script | `scripts/check_<gate>.py` or `.sh` | `scripts/check_module_size.py` |
+| Research finding | `docs/research/q<N>-<topic>.md` | `docs/research/q10-pyav-ffmpeg-licence.md` |
 
-_`/autonomous-sdlc-harness:harness-analyze` fills this table from the repository's real file names — or add the rows by hand, one per kind of file this project has a naming rule for. Until it is filled, an implementer follows whatever the files around it already do, which is slower and less consistent than one row here._
+_Provenance: existing mode. Read off the tracked file names under `src`, `tests`, `scripts` and `docs` (`git ls-files`) and off `ARCHITECTURE.md` §2._
 
 ---
 
@@ -25,6 +37,10 @@ This file is auto-loaded into every agent, which is why it deliberately holds al
 | When working on… | Read |
 |---|---|
 | **Any implementation, review or planning** — the rules that hold in every layer, and the `general` layer's own rules | [`context/conventions.md`](context/conventions.md) |
+| The `domain` layer — `src/scenewise/domain` | [`context/domain.md`](context/domain.md) |
+| The `app` layer — `src/scenewise/app` | [`context/app.md`](context/app.md) |
+| The `adapters` layer — `src/scenewise/adapters` | [`context/adapters.md`](context/adapters.md) |
+| The `service` layer — `src/scenewise/service` | [`context/service.md`](context/service.md) |
 | The `package` layer — `src` | [`context/package.md`](context/package.md) |
 | The `tests` layer — `tests` | [`context/tests.md`](context/tests.md) |
 | **Planning or reviewing at branch level** — the lessons ledger: one-line rules distilled from defects that got past every automated gate and were caught by a human | [`../sdlc-harness/lessons.md`](../sdlc-harness/lessons.md) |

@@ -60,9 +60,10 @@ never from the state directory. A request's `delivery.artifacts.uri_prefix` must
 
 ## Extras
 
-The base install has no model runtime and no torch. Extras: `service` (FastAPI, uvicorn), `asr` (CPU only),
-`llm-anthropic`, `vision`, `gcs`, and the selector pair `torch-cpu` / `torch-cu130`. With uv, the selectors route
-torch and torchvision to the PyTorch CPU or CUDA 13 index. **pip users** do not get that routing: for a CPU install,
+The base install has no model runtime and no torch. Extras: `service` (FastAPI, uvicorn), `asr` (CPU only), the opt-in
+`asr-whisper` (faster-whisper; brings PyAV's GPL x264/x265, so published images leave it out; U16), `llm-anthropic`,
+`vision`, `gcs`, and the selector pair `torch-cpu` / `torch-cu130`. With uv, the selectors route torch and torchvision
+to the PyTorch CPU or CUDA 13 index. **pip users** do not get that routing: for a CPU install,
 pass `--index-url https://download.pytorch.org/whl/cpu` (PyPI's default torch on Linux is the CUDA 13 build).
 
 ## Development

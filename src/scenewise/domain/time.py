@@ -2,13 +2,13 @@
 
 import math
 from dataclasses import dataclass
-from typing import NewType
+from typing import Final, NewType
 
 Seconds = NewType("Seconds", float)
 
-_MS_PER_SECOND = 1_000
-_MS_PER_MINUTE = 60_000
-_MS_PER_HOUR = 3_600_000
+MS_PER_SECOND: Final = 1_000
+_MS_PER_MINUTE: Final = 60_000
+_MS_PER_HOUR: Final = 3_600_000
 
 
 def _check_time(t: float, name: str) -> None:
@@ -44,8 +44,8 @@ def vtt_timestamp(t: Seconds) -> str:
     This is the one place where times are rounded to milliseconds.
     """
     _check_time(t, "timestamp")
-    total = round(t * _MS_PER_SECOND)
+    total = round(t * MS_PER_SECOND)
     hours, rest = divmod(total, _MS_PER_HOUR)
     minutes, rest = divmod(rest, _MS_PER_MINUTE)
-    seconds, millis = divmod(rest, _MS_PER_SECOND)
+    seconds, millis = divmod(rest, MS_PER_SECOND)
     return f"{hours:02d}:{minutes:02d}:{seconds:02d}.{millis:03d}"

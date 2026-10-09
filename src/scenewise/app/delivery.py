@@ -8,19 +8,25 @@ Callbacks (step 7's notify) arrive with the HTTP callback adapter.
 
 import time
 from dataclasses import dataclass, replace
-from typing import assert_never
+from typing import Final, assert_never
 
 import structlog
 
 from scenewise import __version__
+from scenewise.app.constants import JSON_MEDIA_TYPE
 from scenewise.app.contract import mapping
 from scenewise.app.contract.envelope import Envelope
 from scenewise.app.deps import Dependencies
 from scenewise.app.publish import publish
 from scenewise.app.runner import run_job
-from scenewise.domain.errors import InputError, RetryableError, ScenewiseError
+from scenewise.domain.errors import (
+    InputError,
+    JobIdConflictError,
+    RetryableError,
+    ScenewiseError,
+)
 from scenewise.domain.jobs import (
-    RECORD_SCHEMA_VERSION,
+    FIRST_ATTEMPT,
     AlreadyDone,
     AttemptInfo,
     Conflict,
@@ -31,15 +37,17 @@ from scenewise.domain.jobs import (
     JobState,
     Start,
     decide_attempt,
+    job_id,
 )
 from scenewise.domain.results import job_state
 from scenewise.domain.time import Seconds
-from scenewise.ports import WriteConflictError
+from scenewise.ports import ABSENT_GENERATION, BlobStore, WriteConflictError
 
 log = structlog.get_logger(__name__)
 
-JSON = "application/json"
-RETRY_AFTER_CONFLICT = Seconds(30.0)  # another delivery won the claim or the record
+RECORD_FILE_NAME: Final = "status.json"
+# another delivery won the claim or the record
+RETRY_AFTER_CONFLICT: Final = Seconds(30.0)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -52,25 +60,55 @@ class DeliveryPolicy:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Finished:
-    """Answer 200 with ``body``: a job status, or a ``job_id_conflict`` rejection."""
+    """The job reached an answerable state; ``body`` is its status document."""
 
     body: bytes
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
+class Rejected:
+    """Refused without writing a record; the HTTP layer renders ``error``."""
+
+    error: InputError
+
+
+@dataclass(frozen=True, slots=True, kw_only=True)
 class TryLater:
-    """Answer 503 with ``Retry-After``; the queue redelivers."""
+    """Not finished yet: the request should be delivered again after ``retry_after``."""
 
     error: RetryableError
     retry_after: Seconds
 
 
-type DeliveryOutcome = Finished | TryLater
+type DeliveryOutcome = Finished | Rejected | TryLater
 
 
-def job_prefix(state_prefix: str, job_id: str) -> str:
-    """``{state_prefix}/{job_id}``: the record's folder and the default artifacts."""
-    return f"{state_prefix.rstrip('/')}/{job_id}"
+def job_prefix(state_prefix: str, job: str) -> str:
+    """``{state_prefix}/{job}``: the record's folder and the default artifacts."""
+    return f"{state_prefix.rstrip('/')}/{job}"
+
+
+def record_uri(state_prefix: str, job: str) -> str:
+    """``{state_prefix}/{job}/status.json``: where the job record lives."""
+    return f"{job_prefix(state_prefix, job)}/{RECORD_FILE_NAME}"
+
+
+def job_status(
+    job: str, *, store: BlobStore, state_prefix: str, now: float
+) -> bytes | None:
+    """The status document of job ``job`` at ``now``; ``None`` when there is none.
+
+    A string that is not a valid job id names no job. A store failure propagates as
+    the store raised it; an unreadable record is ``invariant_violation``.
+    """
+    try:
+        key = job_id(job)
+    except ValueError:
+        return None
+    blob = store.read(record_uri(state_prefix, key))
+    if blob is None:
+        return None
+    return mapping.status_json(mapping.record_from_json(blob.data), now)
 
 
 def artifacts_prefix(job: Job, state_prefix: str) -> str:
@@ -100,14 +138,12 @@ class _Delivery:
 
     @property
     def uri(self) -> str:
-        return (
-            f"{job_prefix(self.policy.state_prefix, self.envelope.job_id)}/status.json"
-        )
+        return record_uri(self.policy.state_prefix, self.envelope.job_id)
 
     def write(self, record: JobRecord, *, if_generation: int) -> int:
         data = mapping.record_to_json(record)
         return self.deps.store.write(
-            self.uri, data, content_type=JSON, if_generation=if_generation
+            self.uri, data, content_type=JSON_MEDIA_TYPE, if_generation=if_generation
         )
 
     def answer(self, record: JobRecord) -> Finished:
@@ -185,7 +221,6 @@ def _attempt(d: _Delivery, attempt: int, *, generation: int) -> DeliveryOutcome:
         error_code=None,
         result_uri=None,
         updated_at=d.info.now,
-        schema_version=RECORD_SCHEMA_VERSION,
         scenewise_version=__version__,
         external_ref=d.envelope.external_ref,
     )
@@ -225,7 +260,8 @@ def handle_delivery(
     with structlog.contextvars.bound_contextvars(job_id=envelope.job_id):
         blob = deps.store.read(d.uri)
         if blob is None:
-            return _attempt(d, 1, generation=0)  # decide_attempt(None, ...) is Start(1)
+            # no record: decide_attempt would start the first attempt
+            return _attempt(d, FIRST_ATTEMPT, generation=ABSENT_GENERATION)
         record = mapping.record_from_json(blob.data)
         generation = blob.generation
         decision = decide_attempt(record, envelope.request_digest, info)
@@ -240,12 +276,8 @@ def handle_delivery(
                 return _give_up(d, record, generation=generation)
             case Conflict():
                 log.error("job_id_conflict")
-                error = InputError(
-                    code="job_id_conflict", detail="job id used for another request"
+                return Rejected(
+                    error=JobIdConflictError(detail="job id used for another request")
                 )
-                body = mapping.rejection_json(
-                    envelope.job_id, error, status=409, title="Job id already used"
-                )
-                return Finished(body=body)
             case _:
                 assert_never(decision)
