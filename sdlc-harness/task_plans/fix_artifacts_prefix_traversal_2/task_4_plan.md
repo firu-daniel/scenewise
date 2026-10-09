@@ -50,3 +50,9 @@ This task tests exactly that contract and imports no private helper. It tests th
 - Run the two edited files on their own, as `.claude/context/conventions.md` § Testing bar states: `bash harness-scripts/test.sh tests/unit/test_delivery.py` and `bash harness-scripts/test.sh tests/unit/test_jobs.py`. Every new row passes against Task 1's code.
 - Every branch Task 1 added (query/fragment, relative path, the `file` + `localhost` host rewrite and its false side, the empty-path-as-`/` case, same versus different scheme or host, a job folder contained versus not — including a folder that reaches the state path only through the appended job id) is reached by at least one row above. That keeps the unit-tier 100% branch-coverage bar for `app`, which Phase G measures.
 - Run `bash harness-scripts/typecheck.sh`: mypy and ruff must pass over the edited test files.
+
+**Deviations from plan:**
+
+- Three tests added for the two branches Task 1 recorded under its own **Deviations from plan:** note, which this plan does not list. Without them `app` misses the unit-tier 100% branch bar. `test_a_prefix_that_is_not_a_valid_uri_is_refused` covers `file://[/srv` → `uri_not_allowed` with detail "artifacts uri_prefix is not a valid URI". With an unparsable state prefix `file://[/srv`, `test_an_unparsable_state_prefix_refuses_a_scheme_less_prefix` covers `/srv/x` refused (it fails closed), and `test_an_unparsable_state_prefix_accepts_a_prefix_with_a_scheme` covers `file:///srv/x` accepted.
+- The `None` fallback row is its own test, `test_no_requested_prefix_puts_artifacts_in_the_job_folder`, rather than a row in the `(state, prefix, expected)` table. Its call shape is the plan's.
+- The test names say "unparsable", not "unparseable", because the typecheck gate's spell checker rejects "unparseable".
