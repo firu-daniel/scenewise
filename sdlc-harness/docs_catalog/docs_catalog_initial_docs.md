@@ -6,7 +6,7 @@
 - [x] `job-status` · feature · docs/features/job-status.md
       title: Job Status (GET /v1/jobs/{job})
       entry: route: GET /v1/jobs/{job} in src/scenewise/service/http/routes.py get_job ; usecases: src/scenewise/app/delivery.py job_status, record_uri ; contract: src/scenewise/app/contract/mapping.py status_json, record_from_json, src/scenewise/app/contract/results.py JobStatusV1 ; domain: src/scenewise/domain/jobs.py wire_status, job_id ; ports: BlobStore read ; stored_data: job record {state_prefix}/{job_id}/status.json
-- [ ] `audio-stage` · feature · docs/features/audio-stage.md
+- [x] `audio-stage` · feature · docs/features/audio-stage.md
       title: Audio Stage
       entry: usecases: src/scenewise/app/audio.py acquire_audio, src/scenewise/app/stages.py audio, src/scenewise/app/runner.py _audio_stage, _dispatch ; domain: src/scenewise/domain/inputs.py AudioFile, AudioSegments, AudioManifest, NoAudio ; ports: BlobStore materialise (deps.inputs), MediaTool probe, audio_track ; adapters: src/scenewise/adapters/media/ffmpeg.py FfmpegMediaTool ; contract: src/scenewise/app/contract/requests.py AudioFileV1, NoAudioV1, src/scenewise/app/contract/results.py AudioStageV1 ; stored_data: audio.wav under {prefix}/a{attempt}/
 - [x] `job-results-and-artifacts` · feature · docs/features/job-results-and-artifacts.md
