@@ -21,7 +21,7 @@
 - [ ] `layering-and-ports` · concept · docs/concepts/layering-and-ports.md
       title: Layering, Ports and the Composition Root
       entry: layers: domain, app, adapters, service, package (ARCHITECTURE.md §2-§4, pyproject.toml [tool.importlinter]) ; ports: src/scenewise/ports.py ; bundle: src/scenewise/app/deps.py Dependencies, Speech, enabled_stages ; composition root: src/scenewise/service/bootstrap.py build_dependencies, _stores ; adapters: src/scenewise/adapters/storage/local.py, src/scenewise/adapters/media/ffmpeg.py, src/scenewise/adapters/media/images.py
-- [ ] `wire-contract` · concept · docs/concepts/wire-contract.md
+- [x] `wire-contract` · concept · docs/concepts/wire-contract.md
       title: The Versioned Wire Contract
       entry: contract: src/scenewise/app/contract/requests.py JobRequestV1, src/scenewise/app/contract/results.py JobResultV1, JobStatusV1, ProblemV1, RejectionV1, src/scenewise/app/contract/records.py JobRecordV1, src/scenewise/app/contract/envelope.py parse, request_digest, _external_ref ; mapping: src/scenewise/app/contract/mapping.py to_domain, record_to_json, record_from_json, status_json, result_json, problem ; constants: src/scenewise/app/constants.py SCHEMA_VERSION_V1, JSON_MEDIA_TYPE
 - [ ] `error-model` · concept · docs/concepts/error-model.md
