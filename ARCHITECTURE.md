@@ -70,8 +70,7 @@ scenewise/
 ├── .github/
 │   ├── workflows/ci.yml      # merge gates: `static` and `test`
 │   ├── workflows/extended.yml  # `models`, `property-nightly`, `supply-chain`; never required
-│   ├── dependabot.yml        # github-actions and uv, 14-day cooldown
-│   └── CODEOWNERS            # gate files, bound by a ruleset (§16)
+│   └── dependabot.yml        # github-actions and uv, 14-day cooldown
 ├── docs/research/            # the findings this document is built from
 ├── scripts/                  # check_module_size.py, check_suppressions.py, import_contracts.py,
 │                             #   check_lock.sh, fetch_models.py (gate helpers, §16)
@@ -771,17 +770,19 @@ plus `test` on 3.12, 3.13 and 3.14); `extended.yml` jobs are not merge gates.
 | Lock | `uv lock --check`, `UV_LOCKED=1`; `check_lock.sh` | Lock matches `pyproject.toml`; torch routed per selector; no torch or `onnxruntime-gpu` in `service + asr` | pass |
 | Hygiene | deptry 0.25; vulture 2.16; typos 1.51 | Declared = imported; no dead code; spelling | 0 findings |
 | Workflow security | zizmor 1.30 offline (online nightly) | Workflow and pin hygiene | 0 findings |
-| Gate-file changes | CODEOWNERS + ruleset (U13) | `pyproject.toml`, `uv.lock`, `scripts/`, `vulture_whitelist.py`, `.github/`, every `conftest.py` | code-owner review; only the Repository admin role may bypass |
+| Every change, gate files included | Rulesets (U18) | `dev`: pull request, one approval covering the most recent push, `static` and `test` required. `main`: updates restricted, published from `dev` | maintainer approval; only the Repository admin role may bypass, through a pull request |
 
-**How the gate-file rule binds (U13, U13a).** PRs from harness runs on GitHub Actions are authored by
-`github-actions[bot]` and get normal code-owner review. PRs from local harness runs are opened by the maintainer, so a
-gate-file change merges only through the logged admin bypass ("for pull requests only"), which is the intended signal
-that an agent changed a gate. If the repository moves to an organisation or gains another admin, review the ruleset.
+**How review binds (U18).** `dev` is the trunk and GitHub's default branch; `main` is published from it and carries
+the product without the harness adoption. Every pull request into `dev` needs the maintainer's approval, so a gate-file
+change gets the same review as any other; there is no CODEOWNERS file. Harness runs on GitHub Actions open their pull
+requests with a machine collaborator's token (write role, never admin), so `static` and `test` run on them. The
+maintainer's own pull requests merge through the admin bypass ("for pull requests only"), which is logged. If the
+repository moves to an organisation or gains another admin, review the rulesets.
 
-The full tool configuration and workflows are in q8b §11–§13; apply q8c §6.1–§6.2 and §7.7 to them, plus U11, D2, D3 and
-D5.
+The full tool configuration and workflows are in q8b §11–§13; apply q8c §6.1–§6.2 and §7.7 to them, plus U11, D2 and
+D3.
 
-Sources: q8b §2–§15; q8c §6.1–§6.2, §7.7, §8; U11, U13, U13a, D2–D5.
+Sources: q8b §2–§15; q8c §6.1–§6.2, §7.7, §8; U11, U18, D2–D4.
 
 ---
 
@@ -811,13 +812,9 @@ Nothing here blocks the skeleton.
 - PyAV's FFmpeg licence is settled (q10: GPL-3.0-or-later; only `asr-whisper` builds carry it, U16). Open: the ffmpeg
   in published images, Ubuntu's or an LGPL-only build, decided with the first published Dockerfile (U17, q10 §5), and
   q10 §4's **[lawyer]** items before images are published.
-- The nightly `codeowners/errors` check, once the repository exists (q8c §8).
-- **To verify before the ruleset is set up** (U13 stays decided; no finding covers these yet): (a) whether `static`
-  and `test` run on PRs opened with `GITHUB_TOKEN` (GitHub starts no `pull_request` workflows for them without a PAT or
-  App token); (b) the "Allow GitHub Actions to create pull requests" setting; (c) the permissions the agent workflow
-  needs to change `.github/workflows/`. No fix is chosen here.
-- Whether `tests/models.lock` and `Dockerfile` belong in the CODEOWNERS gate-file list (raised in
-  `reviews/deliverable-architecture-review-r1.md`; no finding covers it).
+- Settled by U18 (2026-10-09): CODEOWNERS and its nightly `codeowners/errors` check are dropped; agent pull requests use
+  a machine collaborator's token, so `static` and `test` run on them; "Allow GitHub Actions to create and approve pull
+  requests" stays off.
 
 The full list is in [`open-decisions.md`][od].
 
