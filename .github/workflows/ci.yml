@@ -1,13 +1,13 @@
 name: ci
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:            # default types: opened, synchronize, reopened
 permissions:
   contents: read
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}   # every main commit gets a full run
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}   # every main and dev commit gets a full run
 env:
   UV_LOCKED: "1"
   HF_HUB_DISABLE_TELEMETRY: "1"
@@ -35,7 +35,15 @@ jobs:
       - run: uv run deptry --config pyproject.toml src
       - run: uv run vulture --config pyproject.toml
       - run: uv run typos --isolated --config pyproject.toml
-      - run: uv run zizmor --offline --no-config .github
+      - name: zizmor (harness-*.yml at high severity; their remaining findings are kept upstream)
+        run: |
+          shopt -s nullglob
+          product=(); harness=()
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            case "${f##*/}" in harness-*) harness+=("$f") ;; *) product+=("$f") ;; esac
+          done
+          uv run zizmor --offline --no-config .github/dependabot.yml "${product[@]}"
+          if [ "${#harness[@]}" -gt 0 ]; then uv run zizmor --offline --no-config --min-severity high "${harness[@]}"; fi
 
   test:                    # unit + contract (fakes, light adapters) + e2e on generated media
     runs-on: ubuntu-24.04

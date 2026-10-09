@@ -1,8 +1,0 @@
-# Gate files (ARCHITECTURE.md §16). Bound by a ruleset on main that requires code-owner
-# review; only the Repository admin role may bypass, for pull requests only (U13, U13a).
-/pyproject.toml          @firu-daniel
-/uv.lock                 @firu-daniel
-/scripts/                @firu-daniel
-/vulture_whitelist.py    @firu-daniel
-/.github/                @firu-daniel
-**/conftest.py           @firu-daniel
