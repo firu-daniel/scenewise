@@ -39,7 +39,7 @@
 - [x] `media-processing` · concept · docs/concepts/media-processing.md
       title: Media Processing with ffmpeg
       entry: ports: src/scenewise/ports.py MediaTool, ImageReader, AUDIO_SAMPLE_RATE, AUDIO_CHANNELS ; adapters: src/scenewise/adapters/media/ffmpeg.py FfmpegMediaTool, find_binaries, scaled_size, src/scenewise/adapters/media/images.py PillowImageReader ; domain: src/scenewise/domain/media.py MediaInfo, Frame, Tile, Rect ; config: MediaSettings ffmpeg, ffprobe, min_major ; reference: ARCHITECTURE.md §11
-- [ ] `configuration` · concept · docs/concepts/configuration.md
+- [x] `configuration` · concept · docs/concepts/configuration.md
       title: Configuration and Settings
       entry: settings: src/scenewise/service/config.py Settings, MediaSettings, InputSettings, ServiceSettings, LogSettings ; env: SCENEWISE_ prefix with __ nesting ; consumers: src/scenewise/service/bootstrap.py build_dependencies, src/scenewise/service/http/app.py create_app, src/scenewise/service/cli.py main ; reference: ARCHITECTURE.md §10, README.md Requirements
 - [ ] `logging` · concept · docs/concepts/logging.md
