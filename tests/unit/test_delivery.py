@@ -257,6 +257,23 @@ def test_a_prefix_whose_job_folder_is_the_state_prefix_is_refused(
     assert caught.value.code == "uri_not_allowed"
 
 
+@pytest.mark.parametrize(
+    ("state", "prefix", "job"),
+    [
+        ("file:///srv/a1", "file:///", "srv"),
+        ("file:///srv/a1", "file:///srv/..", "srv"),
+        (STATE, "file:///", "srv"),
+        ("mem://bucket/x/a1", "mem://bucket", "x"),
+    ],
+)
+def test_a_job_folder_that_contains_the_state_prefix_is_refused(
+    state: str, prefix: str, job: str
+) -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with(prefix, job), state)
+    assert caught.value.code == "uri_not_allowed"
+
+
 def test_a_parent_prefix_with_another_job_id_is_accepted() -> None:
     assert artifacts_prefix(_job_with("file:///srv", "other"), STATE) == (
         "file:///srv/other"

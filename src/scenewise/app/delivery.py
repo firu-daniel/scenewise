@@ -160,10 +160,11 @@ def artifacts_prefix(job: Job, state_prefix: str) -> str:
     into another job's folder. The job folder ``{uri_prefix}/{job_id}`` - not just
     the requested prefix - is compared with the state prefix after both are
     normalised (scheme and host case, ``localhost``, percent-escapes, dot segments,
-    repeated slashes) and may not lie at or under it, so a parent of the state
-    directory plus a job id equal to its basename is refused too. Queries,
-    fragments and relative paths are refused. The caller's own spelling is
-    returned. Symlinks and which other roots are writable are the output store's
+    repeated slashes) and may not lie at or under it, nor contain it, so a parent
+    of the state directory plus a job id equal to its basename is refused, and so
+    is a job folder whose ``a{attempt}`` subfolder would be the state directory.
+    Queries, fragments and relative paths are refused. The caller's own spelling
+    is returned. Symlinks and which other roots are writable are the output store's
     concern.
     """
     if job.artifacts_prefix is None:
@@ -174,7 +175,10 @@ def artifacts_prefix(job: Job, state_prefix: str) -> str:
     folder = job_prefix(job.artifacts_prefix.rstrip("/"), job.id)
     scheme, host, path = _location(folder)
     state_scheme, state_host, state_path = _location(state_prefix)
-    if (scheme, host) == (state_scheme, state_host) and path.is_relative_to(state_path):
+    same_authority = (scheme, host) == (state_scheme, state_host)
+    if same_authority and (
+        path.is_relative_to(state_path) or state_path.is_relative_to(path)
+    ):
         detail = "artifacts may not be written under the state prefix"
         raise InputError(code="uri_not_allowed", detail=detail)
     return folder

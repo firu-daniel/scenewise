@@ -480,10 +480,10 @@ Tasks is the queue and owns retries and backoff; nothing runs outside a request.
 compare-and-swap preconditions. Artifacts go to `{artifacts_prefix}/a{attempt}/`: `result.json` plus each stage's
 file, which in the skeleton is the `audio` stage's `audio.wav` (A1; `captions.vtt` arrives with captions).
 `artifacts_prefix` is `{delivery.artifacts.uri_prefix}/{job_id}`, else `{state_prefix}/{job_id}`; the job id is always
-appended, and a `uri_prefix` whose job folder normalises to the state prefix or below it (dot segments, repeated
-slashes, percent-escapes, `localhost`) is refused with `uri_not_allowed`, as is one with a query, a fragment or a
-relative path; the output store also fences the state directory against symlinks and other spellings (A6). The
-terminal record's `result_uri` names the winning attempt's files; callers never build paths.
+appended, and a `uri_prefix` whose job folder normalises to the state prefix, below it, or to a folder containing it
+(dot segments, repeated slashes, percent-escapes, `localhost`) is refused with `uri_not_allowed`, as is one with a
+query, a fragment or a relative path; the output store also fences the state directory against symlinks and other
+spellings (A6). The terminal record's `result_uri` names the winning attempt's files; callers never build paths.
 
 **One delivery** (`service/http/push.py`, then `app/delivery.handle_delivery`):
 

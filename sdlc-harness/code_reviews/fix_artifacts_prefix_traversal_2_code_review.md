@@ -30,7 +30,7 @@ One finding is left. The job folder is compared with the state prefix, but the a
 
 Each entry resolves to `sdlc-harness/code_reviews/fix_artifacts_prefix_traversal_2_code_review/finding_<K>.md` through its `**Finding K**` reference.
 
-1. [ ] **Finding 1** — Refuse a job folder that contains the state prefix, so no `a{attempt}` folder can be the state directory _(layer: app, tests, general)_
+1. [x] **Finding 1** — Refuse a job folder that contains the state prefix, so no `a{attempt}` folder can be the state directory _(layer: app, tests, general)_
 
 ---
 
