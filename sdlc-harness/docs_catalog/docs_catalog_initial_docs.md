@@ -12,7 +12,7 @@
 - [x] `job-results-and-artifacts` · feature · docs/features/job-results-and-artifacts.md
       title: Job Results and Artifacts
       entry: usecases: src/scenewise/app/publish.py publish, attempt_prefix, src/scenewise/app/delivery.py artifacts_prefix, job_prefix ; contract: src/scenewise/app/contract/mapping.py result_json, src/scenewise/app/contract/results.py JobResultV1, StageResultsV1, ProbedMediaV1, src/scenewise/app/contract/requests.py DeliveryV1, ArtifactSinkV1 ; ports: BlobStore write (deps.store) ; config: ServiceSettings.artifact_roots, state_prefix ; stored_data: result.json and audio.wav under {prefix}/a{attempt}/, result_uri in the job record
-- [ ] `cli-analyse` · feature · docs/features/cli-analyse.md
+- [x] `cli-analyse` · feature · docs/features/cli-analyse.md
       title: CLI analyse Command
       entry: cli: scenewise analyse FILE --out DIR [--stage ...] and --version in src/scenewise/service/cli.py main, analyse, _parser, _with_local_root ; entry point: src/scenewise/__main__.py, pyproject.toml [project.scripts] ; usecases: src/scenewise/app/runner.py run_job ; composition: src/scenewise/service/bootstrap.py build_dependencies ; contract: src/scenewise/app/contract/mapping.py result_json ; stored_data: audio.wav written to --out, result document on stdout, no job record
 - [ ] `health-probes` · feature · docs/features/health-probes.md
