@@ -33,9 +33,8 @@ install has no torch. [ARCHITECTURE.md](ARCHITECTURE.md) describes the layout,
 [section 8 of the decision document](docs/decisions/initial-research.md#8-repository-setup-part-2) lists the setup steps
 and the remaining checks (Dependabot and `required-version`, test-fixture and tiny-model licences, Homebrew ffmpeg and
 libflite; the PyAV licence is settled by [q10](docs/research/q10-pyav-ffmpeg-licence.md) and U16, and the ffmpeg in
-published images is open, U17). Pull requests from harness runs on GitHub
-Actions get normal code-owner review; pull requests from local harness runs that touch gate files need the maintainer's
-logged admin bypass (U13, U13a).
+published images is open, U17). Work lands on `dev`, the trunk, through pull requests the maintainer approves, and
+`main` is published from it without the harness adoption (U18).
 
 ## 1. Captions for video on demand, English
 

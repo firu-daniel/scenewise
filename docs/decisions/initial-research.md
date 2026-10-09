@@ -762,8 +762,8 @@ U13a were taken after q8c; U16 and U17 after q10 and q11.
 | U10 | **Calibrate before** scenewise labels reach `contentTags`; uncalibrated labels stored for shadow comparison only |
 | U11 | Ruff line length **88** |
 | U12 | Expause scope: **user posts only**; chat and community later |
-| U13 | CODEOWNERS binds through **option A′** (q8c §8, q8b OQ7): a ruleset requires code-owner review on gate files; agent PRs are opened by GitHub Actions, so their author is `github-actions[bot]`, not the maintainer, and the maintainer's approval counts; code-owner review binds on them; only the Repository admin role (the maintainer alone) may bypass, "for pull requests only", visible in the PR and the audit log |
-| U13a | PRs from **local** harness runs are opened manually by the maintainer, so they are maintainer-authored: a local-run PR that touches gate files cannot merge with the normal button and needs the logged admin bypass. That is intended: the forced bypass is the signal that an agent changed a gate. PRs from harness runs on GitHub Actions are authored by `github-actions[bot]` and get normal code-owner review |
+| U13 | **Superseded by U18 (2026-10-09): CODEOWNERS is dropped.** CODEOWNERS binds through **option A′** (q8c §8, q8b OQ7): a ruleset requires code-owner review on gate files; agent PRs are opened by GitHub Actions, so their author is `github-actions[bot]`, not the maintainer, and the maintainer's approval counts; code-owner review binds on them; only the Repository admin role (the maintainer alone) may bypass, "for pull requests only", visible in the PR and the audit log |
+| U13a | **Superseded by U18.** PRs from **local** harness runs are opened manually by the maintainer, so they are maintainer-authored: a local-run PR that touches gate files cannot merge with the normal button and needs the logged admin bypass. That is intended: the forced bypass is the signal that an agent changed a gate. PRs from harness runs on GitHub Actions are authored by `github-actions[bot]` and get normal code-owner review |
 | U14 | **v1 summaries are speech-only** (transcript ≥ ~40 words); visual-only summaries with a label-based rule come with roadmap item 4 (q8c OQ-B) |
 | U15 | The repository lives at **`~/Work/scenewise`** (moved from `~/scenewise`). Before the first push the history is squashed to **one commit** (or "Initial commit: the scenewise" plus one research-docs commit), with **no Co-Authored-By trailer** |
 | U16 | **faster-whisper is opt-in.** It (the large-v3-turbo fallback, U4) moves to an `asr-whisper` extra, documented as bringing GPL code through PyAV's bundled x264/x265, and is left out of published images. The language-ID gate uses an in-house onnxruntime Whisper-tiny adapter (q11). The default `asr` extra has no PyAV |
@@ -1050,7 +1050,8 @@ Each step is checked off here when done, or explicitly deferred with a reason. T
   U16 PyAV is only in the opt-in `asr-whisper`, outside published images); its open items remain: the **[lawyer]**
   questions of q10 §4, the published-image ffmpeg choice (U17, q10 §5) and the third-party notices and source bundle
   for published images (q10 §3). The code-owner ruleset and the nightly `codeowners/errors` check are not part of this
-  tick (see `docs/skeleton-notes.md`, review r1 finding 6).
+  tick (see `docs/skeleton-notes.md`, review r1 finding 6). **Superseded 2026-10-09 by U18:** no CODEOWNERS; rulesets on
+  `main` and `dev` as U18 describes, set up with the harness adoption (step 4).
 - [x] **2. Build the skeleton** with q8a's package tree (with the corrections in section 4.3 and every edit in
   [q8c §6.1–§6.3](../research/q8c-reconciliation.md)), the ports as `Protocol`s and the domain types, **one thin stage
   wired end to end** (audio extraction with ffmpeg behind `MediaTool`, with a test), every Q8 gate configured and
