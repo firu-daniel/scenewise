@@ -17,7 +17,7 @@ Scope of the code today: `audio` is the only stage that is wired. `StageName` al
 
 - [Job Submission (POST /v1/jobs)](features/job-submission.md) (`job-submission`). A caller pushes one JSON job, and the request runs it to a terminal state before answering with the job's status. Covers admission, rejection, back-pressure (413/422/429/503) and the delivery use case.
 - [Job Status (GET /v1/jobs/{job})](features/job-status.md) (`job-status`). Reads a job's durable record and reports it as running, waiting for a retry, or finished with a `result_uri`.
-- [Job Results and Artifacts](features/job-results-and-artifacts.md) (`job-results-and-artifacts`). What a finished job leaves behind: `result.json` and, when one was produced, `audio.wav`, in an attempt-scoped `a{n}/` folder that the record's `result_uri` points to.
+- [Job Results and Artifacts](features/job-results-and-artifacts.md) (`job-results-and-artifacts`). What a finished job leaves behind: `result.json` and, when one was produced, `audio.wav`, in an attempt-scoped `a{n}/` folder that the record's `result_uri` points to. Also covers the rules that refuse a `delivery.artifacts.uri_prefix` with `uri_not_allowed`, failing the job.
 
 ### Features: operations
 
@@ -46,7 +46,7 @@ Scope of the code today: `audio` is the only stage that is wired. `StageName` al
 ### Concepts: data, storage and media
 
 - [The Versioned Wire Contract](concepts/wire-contract.md) (`wire-contract`). The Pydantic models in `src/scenewise/app/contract/` (request, record, status, result, problem, rejection), the lenient envelope, and the mapping to domain values.
-- [Storage and URI Policy](concepts/storage-and-uri-policy.md) (`storage-and-uri-policy`). The `BlobStore` port, the separate input and output stores with their own root allow-lists, the fixed record and artifact paths, and `LocalBlobStore` (`file://`).
+- [Storage and URI Policy](concepts/storage-and-uri-policy.md) (`storage-and-uri-policy`). The `BlobStore` port, the separate input and output stores with their own root allow-lists, the fixed record and artifact paths, and `LocalBlobStore` (`file://`), including the output store's fence that keeps artifact URIs out of the state directory.
 - [Media Processing with ffmpeg](concepts/media-processing.md) (`media-processing`). The `MediaTool` (ffmpeg/ffprobe subprocesses on local files only) and `ImageReader` (Pillow) ports: probe, WAV extraction and frame decoding.
 
 ## Where it's used
@@ -57,7 +57,7 @@ Use this map to find which documents to read first for a task:
 |---|---|
 | The push endpoint, admission or back-pressure | [job-submission](features/job-submission.md), [job-lifecycle-and-timing](concepts/job-lifecycle-and-timing.md), [error-model](concepts/error-model.md) |
 | A JSON document shape | [wire-contract](concepts/wire-contract.md), then the feature that emits that document |
-| Where something is stored or which URIs are accepted | [storage-and-uri-policy](concepts/storage-and-uri-policy.md), [job-results-and-artifacts](features/job-results-and-artifacts.md) |
+| Where something is stored, which URIs are accepted, or the `uri_prefix` / state-prefix checks | [storage-and-uri-policy](concepts/storage-and-uri-policy.md), [job-results-and-artifacts](features/job-results-and-artifacts.md) |
 | A new stage | [stages-and-outcomes](concepts/stages-and-outcomes.md), [audio-stage](features/audio-stage.md) (the one wired example), [layering-and-ports](concepts/layering-and-ports.md) |
 | ffmpeg / ffprobe behaviour | [media-processing](concepts/media-processing.md), [audio-stage](features/audio-stage.md) |
 | A setting or an environment variable | [configuration](concepts/configuration.md) |
