@@ -1,6 +1,8 @@
 # scenewise: initial research decisions
 
-Status: Part 1 (research) complete, 2026-10-08. Part 2 (repository setup and research question 9) is still to do.
+Status: Part 1 (research) complete, 2026-10-08. Part 2: steps 1–3 done on 2026-10-08 (section 8); steps 4–6 and
+research question 9 are still to do. q10, q11, U16 and U17 (the PyAV licence and captions without PyAV) were added the
+same day.
 
 scenewise is an open-source, self-hosted Python service that understands video: captions, summaries, chapters, a
 moderation second opinion and labels. Adopters run it in their own cloud and pay their own costs. Expause is its first
@@ -12,7 +14,12 @@ findings file that holds the detail.
 - **Findings** (all final after two review rounds): [`docs/research/`](../research/), files `q1-…` to `q8c-…`. q8c
   ([q8c-reconciliation.md](../research/q8c-reconciliation.md)) reconciles the earlier findings with each other before
   the skeleton is built; where it supersedes a passage of q1–q8b, q8c governs (its §9 lists every such passage).
-- **Decisions the user took during the research** (U1–U15 and U13a) and **orchestrator defaults** (D2–D31, with
+- **Later findings** (final after one review round, 2026-10-08):
+  [q10-pyav-ffmpeg-licence.md](../research/q10-pyav-ffmpeg-licence.md) (the licence of the FFmpeg in PyAV's wheels and
+  of apt ffmpeg in the images) and [q11-asr-without-pyav.md](../research/q11-asr-without-pyav.md) (language ID and the
+  Whisper fallback without PyAV; its scripts are in `docs/research/q11/`). Where they and U16/U17 supersede q2 or q8c
+  (the LID backend, the `asr` extra, PyAV), they govern.
+- **Decisions the user took during the research** (U1–U17 and U13a) and **orchestrator defaults** (D2–D31, with
   gaps explained in section 4.2):
   [`user-decisions.md`](../research/user-decisions.md). Both override anything in the findings files.
 - **Questions still open**: [`open-decisions.md`](../research/open-decisions.md), summarised in section 7 below.
@@ -51,7 +58,7 @@ findings file that holds the detail.
 
 | Stage | Model | Runtime | Where it runs | The sentence that decides it |
 |---|---|---|---|---|
-| **Captions** (roadmap 1) | NVIDIA **Parakeet-TDT-0.6b-v2** int8 (CC-BY-4.0, attribution per U4), behind **Silero VAD v6.2** and a **faster-whisper `tiny` language-ID gate**. Fallback: faster-whisper `large-v3-turbo` (MIT) | **sherpa-onnx 1.13.8** (D20), ASR only; scenewise's own Silero loop on onnxruntime 1.30.0; onnx-asr 0.12.0 CI-tested as the second runtime | Inside the scenewise Cloud Run CPU service (dev: the same stack on a macOS CPU) | Parakeet beats every openly runnable Whisper variant on the Open ASR Leaderboard (4.70% average WER vs 5.40–6.36%), runs about 5.6–9× faster than Whisper large-v3-turbo on CPU in the same runtime (5.6× at the int8 precision scenewise ships), and has native timestamps, which the few lower-WER models lack [q2 §1–§2]. Hosted Gemini 3.1/3.5 Flash-Lite captions are a close call on cost that the Cloud Run benchmark decides (section 7.1) [q7 §1]. |
+| **Captions** (roadmap 1) | NVIDIA **Parakeet-TDT-0.6b-v2** int8 (CC-BY-4.0, attribution per U4), behind **Silero VAD v6.2** and a **Whisper `tiny` language-ID gate** (fp32 ONNX on onnxruntime, in-house adapter; q11, U16). Fallback: faster-whisper `large-v3-turbo` (MIT), **opt-in** extra `asr-whisper`, not in published images (U16) | **sherpa-onnx 1.13.8** (D20), ASR only; scenewise's own Silero loop on onnxruntime 1.30.0; onnx-asr 0.12.0 CI-tested as the second runtime | Inside the scenewise Cloud Run CPU service (dev: the same stack on a macOS CPU) | Parakeet beats every openly runnable Whisper variant on the Open ASR Leaderboard (4.70% average WER vs 5.40–6.36%), runs about 5.6–9× faster than Whisper large-v3-turbo on CPU in the same runtime (5.6× at the int8 precision scenewise ships), and has native timestamps, which the few lower-WER models lack [q2 §1–§2]. Hosted Gemini 3.1/3.5 Flash-Lite captions are a close call on cost that the Cloud Run benchmark decides (section 7.1) [q7 §1]. |
 | **Summaries + chapters** (roadmap 2) | **Claude Haiku 5.5** (`claude-haiku-5-5`), thinking disabled, effort `low`, structured output. Self-hosters and dev: **Qwen3.5-4B** (Apache-2.0) through an OpenAI-compatible local server | `anthropic` SDK with `AnthropicVertex`, **synchronous** (U5, U6) | Hosted: **Vertex AI EU multi-region** endpoint for Expause (U5), called from the Cloud Run service | Haiku costs about $0.00075 per video including the billed wait, about 17× less than a single-stream Qwen3.5-4B on Cloud Run CPU; a batched vLLM server on an L4 is unmeasured, with at most about $10/month at stake. Small local models score lower on zero-shot chaptering than larger hosted models, and Haiku 5.5 itself has no published chaptering benchmark, so the summaries eval decides quality (section 7.4) [q7 §1, §6, §7; q3 §Summary item 2]. |
 | **Moderation second opinion** (roadmap 3) | Tier 1 on every frame: **Freepik/nsfw_image_detector** (MIT) + **SigLIP 2 zero-shot** prompts for violence, gore and weapons. Tier 2 on ambiguous or flagged frames only: a promptable guard, **Shieldstral-1.0-3B** (Apache-2.0) or **ShieldGemma 2 4B** (Gemma terms), not yet chosen (section 7). Optional third opinion: Haiku 5.5 | Local; guard out of process (q7 assumes a llama.cpp server) | Inside the Cloud Run CPU service | scenewise may only add an escalation, never clear content (U1), so it needs cheap local per-frame scores that map onto Google's Likelihood buckets, and Haiku cannot carry it: Anthropic documents that Claude does not process explicit images that violate its Usage Policy, so Haiku cannot be relied on for the sexual category (whether it refuses to classify or only declines to describe is untested, q4 OQ3) [q4 §Summary, S21]. |
 | **Labels** (roadmap 4) | **SigLIP 2 ViT-B/16** (Apache-2.0) zero-shot against an **adopter-supplied taxonomy**; optional pooled video embedding from the same pass. Optional "rich tags" tier: Haiku 5.5 | `open_clip_torch` 3.3.0 on torch 2.14.1 (CPU) | Inside the Cloud Run CPU service | Every option costs under 5 cents per video, so cost does not decide. Gemini Embedding 2 also gives zero-shot labels from adopter text plus an embedding in one pass, but only a local open-weight model *combines* that with keeping data in the operator's infrastructure and no vendor lock-in on stored vectors [q5 §1, §5a, §5b]. |
@@ -227,15 +234,15 @@ Detail: [q1-input-contract.md](../research/q1-input-contract.md).
 
 ### Q2. Captions (roadmap item 1)
 
-**Decision** [q2 §1, §6; q8c §2, §3, §5].
+**Decision** [q2 §1, §6; q8c §2, §3, §5; q11 §1, §3.5; U16].
 
 | | Development (macOS Apple Silicon, CPU) | Production (Cloud Run CPU, EU) |
 |---|---|---|
 | Model | Parakeet-TDT-0.6b-v2 int8, pinned revision | same |
 | Runtime | sherpa-onnx 1.13.8, ASR only | same |
 | VAD | scenewise's own Silero v6.2 ONNX loop on onnxruntime 1.30.0 (`CPUExecutionProvider` set explicitly), runs cut at ≤ 30 s at the lowest-probability frame, then merged into ≤ 30 s recognition segments across gaps < 2 s (q8c §2) | same |
-| Language-ID gate | faster-whisper 1.2.1 `detect_language` with `tiny`, on VAD speech windows only; English when p ≥ 0.5; caption English windows whenever there are ≥ ~2 s of English speech (D19); "unknown" windows dropped and flagged (D21) | same |
-| Fallback | faster-whisper `large-v3-turbo` (or `distil-large-v3.5`), `vad_filter=False` (spans already VAD-cut, q8c §2), `condition_on_previous_text=False` | same |
+| Language-ID gate | In-house adapter: Whisper `tiny` fp32 encoder + decoder (`onnx-community/whisper-tiny` @ `ff41770`, MIT per OpenAI Whisper) on pip onnxruntime + numpy, one decoder step, softmax over the language tokens; batch = 1 by default; VAD speech windows only. A window is English if it holds ≥ 1.0 s of VAD speech and p(en) ≥ 0.5; English windows are captioned when they total ≥ 2 s of speech (D19); "unknown" windows dropped and flagged (D21) [q11 §2.3, §3.5; U16]. Replaces faster-whisper `tiny` `detect_language` with argmax p ≥ 0.5: white noise reaches argmax p 0.48–0.57, but p(en) ≤ 0.18 | same |
+| Fallback | faster-whisper `large-v3-turbo` (or `distil-large-v3.5`), `vad_filter=False` (spans already VAD-cut, q8c §2), `condition_on_previous_text=False`. **Opt-in** extra `asr-whisper`: faster-whisper hard-requires PyAV, whose wheels bundle GPL x264/x265 (q10); published images leave it out (U16) | self-built images only |
 | No speech | No VTT; the stage is `skipped` with reason `no_speech` (D23, confirmed by q8c §5) | same |
 
 q8c refines three rows [q8c §2]: VAD runs are cut at ≤ 30 s and then **merged** into recognition segments of up to
@@ -265,7 +272,7 @@ LID gate), its word-timestamp quality is unverified, and whether Gemini 3.x is s
 | Timestamps | Native word, segment and character timestamps in NeMo; sherpa-onnx returns token starts plus TDT durations (0–0.32 s per token) and log-probabilities | https://huggingface.co/nvidia/parakeet-tdt-0.6b-v2 [q2 S6]; https://github.com/k2-fsa/sherpa-onnx/tree/v1.13.8/sherpa-onnx [q2 S53] |
 | Silence and hallucination | Whisper large-v3 without VAD hallucinated on 40.3% of 301,317 non-speech clips; on padded speech clips the rate was 21.3% unprocessed, 12.5% with WebRTC VAD, 0.2% with Silero VAD. Music was excluded from that study, so no source covers music beds | Barański et al., arXiv 2501.11378v1, https://arxiv.org/html/2501.11378v1 [q2 S19] |
 | Why an LID gate | Parakeet v2 is English-only; locally it turned German speech into invented pseudo-English | [q2 §1, L1] |
-| Licence | Parakeet v2 weights CC-BY-4.0; Silero MIT; Whisper weights and CTranslate2 conversions MIT; sherpa-onnx Apache-2.0 | [q2 §5.3] |
+| Licence | Parakeet v2 weights CC-BY-4.0; Silero MIT; Whisper weights (and their ONNX and CTranslate2 conversions) MIT; sherpa-onnx Apache-2.0. PyAV's bundled FFmpeg is effectively GPL-3.0-or-later (x264/x265), hence U16 | [q2 §5.3; q10 §1; q11 §1] |
 
 **Rejected, and why** [q2 §2, §5.1, §6.2].
 
@@ -590,7 +597,7 @@ Detail: [q7-runtime-cost.md](../research/q7-runtime-cost.md) and the script
   item 3 [q8c §6.3 item 14].
 - **Speech, reconciled** [q8c §1–§2]:
   - `VoiceActivityDetector.speech_probabilities(track) -> SpeechProbabilities` (Silero; per-hop P(speech)) and
-    `LanguageIdentifier.identify(track, windows) -> list[LanguageGuess]` (faster-whisper `tiny`; argmax and p per
+    `LanguageIdentifier.identify(track, windows) -> list[LanguageGuess]` (Whisper `tiny` ONNX, q11; argmax and p per
     window, a window being speech spans the adapter concatenates) are the two new ports.
   - `SpeechRecognizer.transcribe(track: Path, segments: Sequence[TimeSpan], *, language: str) ->
     list[RecognizedSegment]`: the boundary is the one WAV plus spans; adapters slice and convert to float32 and give
@@ -647,6 +654,10 @@ Detail: [q7-runtime-cost.md](../research/q7-runtime-cost.md) and the script
   - **PyAV becomes a transitive dependency** (faster-whisper requires `av>=11`) and is imported, but never given
     input: faster-whisper adapters receive decoded arrays only, enforced by contract tests. This supersedes q8a §9.1's
     "PyAV is not even a transitive dependency"; ffmpeg stays the only decoder.
+  - **Superseded by q11 and U16 (2026-10-08):** faster-whisper leaves `asr` for an opt-in `asr-whisper` extra, so the
+    default install has no PyAV (the PyAV rule above applies to `asr-whisper` only); LID runs on an in-house
+    onnxruntime Whisper-tiny adapter. pip `onnxruntime` stays in `asr` (Silero, LID), so the `onnxruntime-gpu`
+    constraint holds.
   - `llm-anthropic` becomes `["anthropic[vertex]>=1.12"]` (U5, q7 §2.3); Pillow becomes a base dependency (D3);
     CTranslate2 (CUDA 12) runs on CPU (D12); google-auth stays in `gcs`, and bootstrap checks the import, not the
     extra, when `callback_auth = oidc` (q8c §8, q8b OQ12).
@@ -733,7 +744,7 @@ browser UI, and every place the harness assumes a web front end.
 ## 4. User decisions and orchestrator defaults
 
 Full text: [`user-decisions.md`](../research/user-decisions.md). These override the findings files. U13–U15 and
-U13a were taken after q8c.
+U13a were taken after q8c; U16 and U17 after q10 and q11.
 
 ### 4.1 Decided by the user (2026-10-08)
 
@@ -755,6 +766,8 @@ U13a were taken after q8c.
 | U13a | PRs from **local** harness runs are opened manually by the maintainer, so they are maintainer-authored: a local-run PR that touches gate files cannot merge with the normal button and needs the logged admin bypass. That is intended: the forced bypass is the signal that an agent changed a gate. PRs from harness runs on GitHub Actions are authored by `github-actions[bot]` and get normal code-owner review |
 | U14 | **v1 summaries are speech-only** (transcript ≥ ~40 words); visual-only summaries with a label-based rule come with roadmap item 4 (q8c OQ-B) |
 | U15 | The repository lives at **`~/Work/scenewise`** (moved from `~/scenewise`). Before the first push the history is squashed to **one commit** (or "Initial commit: the scenewise" plus one research-docs commit), with **no Co-Authored-By trailer** |
+| U16 | **faster-whisper is opt-in.** It (the large-v3-turbo fallback, U4) moves to an `asr-whisper` extra, documented as bringing GPL code through PyAV's bundled x264/x265, and is left out of published images. The language-ID gate uses an in-house onnxruntime Whisper-tiny adapter (q11). The default `asr` extra has no PyAV |
+| U17 | **Ubuntu's ffmpeg for development and CI.** Ubuntu build vs an LGPL-only ffmpeg build in published images is decided when the first published Dockerfile is written (q10 §5) |
 
 ### 4.2 Orchestrator defaults (the research's recommendation where it gave one, otherwise a technical, reversible choice; the user may override)
 
@@ -797,11 +810,11 @@ are not listed here.
 | Hosted LLM extra | q8a: `llm-anthropic = ["anthropic>=1.12"]`, which does not cover Vertex | **`llm-anthropic = ["anthropic[vertex]>=1.12"]`** (U5; q7 §2.3); adapter config `provider: "anthropic" \| "vertex"`, `project_id`, `region` |
 | Gemini Flash-Lite figures | q3 lists Gemini 2.5 Flash-Lite as a price comparison | 2.5 Flash-Lite retires on Vertex AI on 2026-10-20 [q4 S46]; **every Gemini figure here is 3.1 or 3.5 Flash-Lite** (as q4, q5 and q7 already use) |
 | ASR runtime | q8a §0, §1.4 and q8b's skeleton use onnx-asr for `adapters/asr/parakeet.py`; q2 (final) chose sherpa-onnx | **sherpa-onnx primary, onnx-asr second** (D20), in `adapters/asr/sherpa_parakeet.py` and `onnx_asr_parakeet.py` (q8c §2) |
-| ASR packaging | q8a: `asr = ["onnx-asr[hub]"]`, faster-whisper in a separate `asr-whisper`, `ort-cpu`/`ort-cu130` selectors; q2: the LID gate needs faster-whisper on every captions job | **One CPU-only `asr` extra** with sherpa-onnx, onnx-asr, onnxruntime, faster-whisper and numpy; `asr-whisper` and the `ort-*` pair removed (q8c §3) |
+| ASR packaging | q8a: `asr = ["onnx-asr[hub]"]`, faster-whisper in a separate `asr-whisper`, `ort-cpu`/`ort-cu130` selectors; q2: the LID gate needs faster-whisper on every captions job | **One CPU-only `asr` extra** with sherpa-onnx, onnx-asr, onnxruntime and numpy; `ort-*` pair removed (q8c §3). faster-whisper is the opt-in `asr-whisper` (fallback only), since LID no longer needs it (q11, U16) |
 | GPU ASR | q8a: `ort-cu130` gives ASR a GPU; q2 §6.2: onnx-asr with onnxruntime-gpu; q7 §2.5: onnxruntime-gpu in `-cuda` | **Out of v1**; ASR runs on CPU in both images; the packaging route is researched only if a GPU path is built (q8c §3, §7.8) |
 | No-speech captions status | q1 §5.1/§9: `succeeded` with reason `no_speech`; D23: `skipped / no_speech` | **`skipped`, reason `no_speech`, no VTT** (D23 confirmed); a succeeded stage never carries a reason (q8c §5) |
 | Summaries without speech | q1 §9 and q3: summary runs on visual input when there is no speech | **Speech-only in v1** (U14): `skipped / below_minimum`; visual-only summaries with roadmap item 4 |
-| PyAV | q8a §9.1: "not even a transitive dependency" | Transitive through faster-whisper and imported, **never given input** (q8c §3) |
+| PyAV | q8a §9.1: "not even a transitive dependency"; q8c §3: transitive through faster-whisper | **Absent from the default install** (U16, q11); only `asr-whisper` brings it, and there it is **never given input** (q8c §3) |
 | `SpeechRecognizer` shape | q8a §4: `transcribe(audio, *, language) -> Transcript`; q2 §6: tokens with times and log-probabilities | WAV path + spans in, `list[RecognizedSegment]` out; word building in the domain (q8c §1) |
 | Fallback VAD setting | q2 §4.3: `vad_filter=True` | `vad_filter=False`, because the spans are already VAD-cut and merged (q8c §2) |
 | Taxonomy format | q5 §6.1: YAML | **TOML** via stdlib `tomllib` (q8c §7.4) |
@@ -907,9 +920,11 @@ Grouped by the feature task that should carry each item. Source: [`open-decision
   wanted at all (q2 OQ6).
 - **T2** timestamps: sherpa start + duration vs onnx-asr vs NeMo word times; tune the cue end extension, segmentation cap
   and cut window.
-- **T3** language ID: `tiny` vs `base` on real Expause clips; the p ≥ 0.5 and ≈ 2 s thresholds; whether Parakeet
+- **T3** language ID: `tiny` vs `base` (ONNX, q11) on real Expause clips; the p(en) ≥ 0.5, 1.0 s and ≈ 2 s thresholds,
+  reporting p(en) on noise and music beds (q11 OQ2); whether Parakeet
   log-probabilities separate languages; accented English. Feeds D19 and D21.
-- **T4** process smoke test in CI: pip onnxruntime, sherpa-onnx and faster-whisper in one process, both import orders,
+- **T4** process smoke test in CI: pip onnxruntime, sherpa-onnx and the ORT LID (faster-whisper in a separate
+  `asr-whisper` job, q11 §4) in one process, both import orders,
   peak RSS; it runs in the `models` job and fails on a golden-file diff or on peak RSS above the instance budget
   [q8c §6.2 item 11].
 - Tune q8c's segmentation starting values with T1–T3: `merge_gap` (2 s) and the LID batch size `lid_chunk` (10)
@@ -977,13 +992,13 @@ Grouped by the feature task that should carry each item. Source: [`open-decision
   support (q6 OQ9).
 - **Expause fact:** target languages (if English↔European only, Canary-1b-v2 becomes an option) (q6 OQ5).
 
-### 7.5 Conflicts: settled by q8c and U13–U15, and still open
+### 7.5 Conflicts: settled by q8c, U13–U17, q10 and q11, and still open
 
 **Settled** (each was an open row here before q8c; the resolutions are in section 4.3 and Q8):
 
 | Item | Resolution |
 |---|---|
-| Packaging of the ASR runtimes (sherpa-onnx primary vs q8a's onnx-asr `asr` extra; faster-whisper for the LID gate in an optional `asr-whisper`) | **One CPU-only `asr` extra** with sherpa-onnx 1.13.8, onnx-asr 0.12.0, onnxruntime 1.30.0, faster-whisper 1.2.1 and numpy 2.5.3, all pinned; `asr-whisper` and `ort-cpu`/`ort-cu130` removed [q8c §3] |
+| Packaging of the ASR runtimes (sherpa-onnx primary vs q8a's onnx-asr `asr` extra; faster-whisper for the LID gate in an optional `asr-whisper`) | **One CPU-only `asr` extra** with sherpa-onnx 1.13.8, onnx-asr 0.12.0, onnxruntime 1.30.0 and numpy 2.5.3, all pinned; `ort-cpu`/`ort-cu130` removed [q8c §3]. Since U16, faster-whisper 1.2.1 is in the opt-in `asr-whisper` (fallback only) and LID is an in-house ORT adapter [q11 §4] |
 | GPU path for the primary ASR (onnx-asr + onnxruntime-gpu vs k2-fsa's CUDA wheels) | **Neither in v1: GPU ASR is out of v1**, and ASR runs on CPU in both images. onnx-asr + onnxruntime-gpu is rejected because faster-whisper hard-requires pip `onnxruntime` [q8c §3, X1]. The route is researched only if a GPU deployment or the L4 job mode is built |
 | Status of a no-speech captions stage (q1: `succeeded` + `no_speech`; D23: `skipped`) | **`skipped / no_speech`, no VTT** (D23 confirmed); q1's exception is removed [q8c §5] |
 | How the tier-2 guard is wired | **Its own `ImageGuard` port** and adapter `adapters/llm/openai_guard.py`, against an out-of-process OpenAI-compatible server [q8c §4.2]. The *model* is still open (below) |
@@ -991,6 +1006,7 @@ Grouped by the feature task that should carry each item. Source: [`open-decision
 | google-auth placement (q8b OQ12) | **Stays in `gcs`**; with `callback_auth = oidc` bootstrap imports `google.oauth2.id_token` and turns an `ImportError` into a `ConfigurationError`. `anthropic[vertex]` brings google-auth too [q8c §8, X4] |
 | Online zizmor in the merge gate (q8b OQ13) | **No**: offline in the gate, online in the nightly `supply-chain` job [q8c §8] |
 | Summaries for videos without enough speech (q8c OQ-B) | **U14**: speech-only in v1; visual-only summaries with roadmap item 4 |
+| Licence of the FFmpeg libraries bundled in PyAV's wheels (q8c §6.3 item 21) | **q10**: effectively GPL-3.0-or-later (x264/x265 linked, `--enable-version3`). **U16**: PyAV only via the opt-in `asr-whisper`, left out of published images; whoever distributes such an image takes on q10 §3. q10 §4's **[lawyer]** questions remain before images are published |
 
 **Still open**
 
@@ -1000,7 +1016,7 @@ Grouped by the feature task that should carry each item. Source: [`open-decision
 | **Guard server returns `top_logprobs`** for image + text chat requests with the candidate's GGUF and vision projector (not checked in q8c §4.2) | — | — | Moderation task (roadmap 3) |
 | **Visual-only summary rule** (U14). q8c §5 gives a starting point: at least 3 distinct emitted non-moderation labels, each the top label on at least one frame; plus whether summary runs the labeller itself, and an additive `"labels"` value for `inputs_used` | — | — | Labels task (roadmap 4) |
 | **GPU ASR packaging route**, if a GPU path is ever built. Constraint: pip `onnxruntime` is always present, so the route must not install `onnxruntime-gpu` beside it. k2-fsa's CUDA wheel details are unverified pointers [q8c §3] | — | — | Only if a GPU image or the L4 job mode is built |
-| **Licence of the FFmpeg libraries bundled in PyAV's wheels**, which every `asr` image now ships (not checked) [q8c §6.3 item 21] | — | — | Part 2 step 1 (NOTICE review) |
+| **ffmpeg in published images** (U17): GPL either way through the base OS; q10 recommends Ubuntu's unless a consumer needs no GPL ffmpeg [q10 §5] | Ubuntu apt ffmpeg `7:6.1.1-3ubuntu5` (GPL-2.0-or-later; same as dev/CI) | LGPL-only ffmpeg build (no x264/x265; own source bundle) | The first published Dockerfile |
 | Tooling follow-ups (q8b OQ3, OQ4, OQ5, OQ8, OQ9) | `uv audit` vs pip-audit; Dependabot and `required-version`; licences of CMU flite voices and `hf-internal-testing/tiny-random-*` models; mutation testing; macOS ffmpeg and libflite | — | Part 2 / tooling |
 
 Starting values that q8c sets but does not treat as decisions: `merge_gap` 2 s, `lid_chunk` 10 windows, and
@@ -1013,7 +1029,7 @@ Starting values that q8c sets but does not treat as decisions: `merge_gap` 2 s, 
 Each step is checked off here when done, or explicitly deferred with a reason. The research lives in this folder,
 `/Users/daniel/Work/scenewise` (`~/Work/scenewise`, moved from `~/scenewise`; U15).
 
-- [ ] **1. Create the public repository `firu-daniel/scenewise`** from this folder, licence Apache-2.0 (set by
+- [x] **1. Create the public repository `firu-daniel/scenewise`** from this folder, licence Apache-2.0 (set by
   the brief, Repository setup step 1, to match the harness). **Before the
   first push, squash the history** to one commit (or "Initial commit: the scenewise" plus one research-docs commit),
   with **no Co-Authored-By trailer** (U15); then push. Set up the code-owner ruleset (require code-owner review; Repository admin
@@ -1028,7 +1044,14 @@ Each step is checked off here when done, or explicitly deferred with a reason. T
   q2 OQ16). None is non-commercial. Haiku 5.5 is a
   commercial API, not a distributed model. Also review the licence of the FFmpeg libraries bundled in PyAV's wheels,
   which every `asr` image ships through faster-whisper (q8c §6.3 item 21; not yet checked).
-- [ ] **2. Build the skeleton** with q8a's package tree (with the corrections in section 4.3 and every edit in
+
+  **Done 2026-10-08:** repository created and pushed, two commits ("Initial commit: the scenewise" and "Add the
+  project skeleton"), licence Apache-2.0. The PyAV licence review is now covered by **q10** (GPL-3.0-or-later; with
+  U16 PyAV is only in the opt-in `asr-whisper`, outside published images); its open items remain: the **[lawyer]**
+  questions of q10 §4, the published-image ffmpeg choice (U17, q10 §5) and the third-party notices and source bundle
+  for published images (q10 §3). The code-owner ruleset and the nightly `codeowners/errors` check are not part of this
+  tick (see `docs/skeleton-notes.md`, review r1 finding 6).
+- [x] **2. Build the skeleton** with q8a's package tree (with the corrections in section 4.3 and every edit in
   [q8c §6.1–§6.3](../research/q8c-reconciliation.md)), the ports as `Protocol`s and the domain types, **one thin stage
   wired end to end** (audio extraction with ffmpeg behind `MediaTool`, with a test), every Q8 gate configured and
   passing (line length 88), and model dependencies pinned in their extras. `pyproject.toml` floors follow q8a's `>=`
@@ -1039,22 +1062,28 @@ Each step is checked off here when done, or explicitly deferred with a reason. T
   |---|---|
   | base | pydantic 2.13.5 (pydantic-core 2.46.5), pydantic-settings 2.15.0, structlog 26.1.0, httpx 0.28.1, **Pillow 12.3.0** (`pillow>=12.3`, D3) [q8a §6.6, §7, §9.4; q8c §3, X1] |
   | `service` | fastapi 0.142.4, uvicorn 0.54.0 (anyio 4.15.1) [q8a §9.4] |
-  | `asr` (CPU only) | sherpa-onnx 1.13.8 (pulls sherpa-onnx-core ==1.13.8; primary, D20); onnx-asr 0.12.0, no `[hub]`, no `[cpu]` (second runtime); onnxruntime 1.30.0 (Silero); faster-whisper 1.2.1 (LID gate and fallback; pulls ctranslate2 4.8.2 and PyAV, `av>=11`); numpy 2.5.3 [q8c §3; q2 §5.2]. Weights for the image layer: Parakeet v2 int8 `csukuangfj/…-int8` @ `1ab9323…` and `istupakov/parakeet-tdt-0.6b-v2-onnx` @ `0bbb45a…` (int8 files only); Silero v6.2 `silero_vad.onnx` sha256 `1a153a22…`, fetched for CI through its byte-identical mirror `istupakov/silero-vad-onnx` @ `b3e3ee3`; `Systran/faster-whisper-tiny` @ `d90ca5f…`; `dropbox-dash/faster-whisper-large-v3-turbo` @ `0a363e9…` (image only, not CI); pin huggingface-hub explicitly in the lock [q2 §5.2; q8c §6.2 item 11a, §7.6] |
+  | `asr` (CPU only) | sherpa-onnx 1.13.8 (pulls sherpa-onnx-core ==1.13.8; primary, D20); onnx-asr 0.12.0, no `[hub]`, no `[cpu]` (second runtime); onnxruntime 1.30.0 (Silero, Whisper-tiny LID, q11); numpy 2.5.3; no PyAV [q8c §3; q2 §5.2; q11 §4; U16]. Weights for the image layer: Parakeet v2 int8 `csukuangfj/…-int8` @ `1ab9323…` and `istupakov/parakeet-tdt-0.6b-v2-onnx` @ `0bbb45a…` (int8 files only); Silero v6.2 `silero_vad.onnx` sha256 `1a153a22…`, fetched for CI through its byte-identical mirror `istupakov/silero-vad-onnx` @ `b3e3ee3`; Whisper `tiny` LID `onnx-community/whisper-tiny` @ `ff41770…` (fp32 `onnx/encoder_model.onnx`, `onnx/decoder_model.onnx`, `generation_config.json`, `added_tokens.json`; sha256 in q11 §2.3), replacing `Systran/faster-whisper-tiny`; pin huggingface-hub explicitly in the lock [q2 §5.2; q8c §6.2 item 11a, §7.6] |
+  | `asr-whisper` (opt-in, U16) | faster-whisper 1.2.1 (fallback recogniser; pulls ctranslate2 4.8.2 and PyAV 19.0.1, whose wheels bundle GPL x264/x265, q10); not in published images. Weights: `dropbox-dash/faster-whisper-large-v3-turbo` @ `0a363e9…` (self-built `asr-whisper` images only, not CI) [q11 §4] |
   | `llm-anthropic` | `anthropic[vertex]>=1.12` (anthropic 1.12.1) (U5) [q7 §2.3; q8a §9.4] |
   | `vision` | open-clip-torch 3.3.0, timm 1.0.30 (floor `>=1.0.17`); Pillow removed (now base, D3) [q5 §3; q8a §9.4; q8c §3] |
   | `gcs` | google-cloud-storage 3.16.0, google-auth (2.61.0 in q8b's lock); google-auth stays here [q8a §9.4; q8c §8] |
   | `torch-cpu` / `torch-cu130` | torch 2.14.1, torchvision 0.29.1, from the PyTorch `cpu` / `cu130` indexes; the only uv `conflicts` pair [q8a §9.4; q8c §6.1 item 3] |
-  | removed | `asr-whisper`, `ort-cpu`, `ort-cu130` [q8c §3] |
+  | removed | `ort-cpu`, `ort-cu130` [q8c §3] (`asr-whisper`, removed by q8c, returned as opt-in with U16) |
   | dev group | uv 0.12.23, ruff 0.16.10, mypy 2.4.0, import-linter 2.15, pytest 9.1.1, pytest-cov 7.1.0, coverage 7.16.2, pytest-timeout 2.4.0, pytest-randomly 5.0.0, hypothesis 6.168.5, deptry 0.25.1, vulture 2.16, typos 1.51.1, zizmor 1.30.1; hooks: pre-commit 4.6.2 or prek 0.5.5 (D6) [q8b] |
 
   Images [q8c §3]: `-cpu` = `--extra service --extra asr --extra llm-anthropic --extra vision --extra gcs --extra
-  torch-cpu`; `-cuda` = the same with `--extra torch-cu130`.
+  torch-cpu`; `-cuda` = the same with `--extra torch-cu130`. Neither includes `asr-whisper`; `scripts/check_lock.sh`
+  asserts that neither set (nor `asr`) resolves `av`, `ctranslate2` or `faster-whisper` (U16).
   Weights are mirrored into scenewise-controlled storage with full sha256 recorded, and baked into the image [q2 §5.2].
   Commit the q1/q2/q5 local measurement scripts under `bench/` if they still exist; otherwise record that they are lost
   and that the Cloud Run benchmark (section 7.1) replaces their figures [q1 §6.2].
-- [ ] **3. Install ffmpeg locally and record the version.** q8b's runs used a static ffmpeg 7.1 (imageio-ffmpeg build,
+
+  **Done 2026-10-08:** skeleton built (deviations in `docs/skeleton-notes.md`); every gate green locally and in
+  GitHub CI run 37792034530 (`static` and `test` on 3.12, 3.13 and 3.14). U16's extras change landed afterwards.
+- [x] **3. Install ffmpeg locally and record the version.** q8b's runs used a static ffmpeg 7.1 (imageio-ffmpeg build,
   no ffprobe); CI installs apt ffmpeg on `ubuntu-24.04`. Whether Homebrew's build has libflite (for generated speech
-  fixtures) is open (q8b OQ9).
+  fixtures) is open (q8b OQ9). **Done 2026-10-08:** ffmpeg 9.0.2 (with ffprobe) installed via Homebrew; it has **no
+  libflite**, so speech fixtures need another source (q8b OQ9). CI keeps Ubuntu's apt ffmpeg 6.1.1 (U17).
 - [ ] **4. Adopt the harness:** `npx autonomous-sdlc-harness init`, then `/autonomous-sdlc-harness:harness-analyze`.
   Record the mode it detected (the skeleton should make it `existing`), the preset and layers `init` detected, whether
   the conventions documents match `ARCHITECTURE.md`, and every hand correction as a harness finding. Feeds Q9.
@@ -1073,7 +1102,16 @@ they still exist. Each
 findings file lists further sources; the ones this document relies on are below, grouped by question.
 
 **Decisions and compiled questions**
-- `docs/research/user-decisions.md` (U1–U15 and U13a, orchestrator defaults), `docs/research/open-decisions.md`.
+- `docs/research/user-decisions.md` (U1–U17 and U13a, orchestrator defaults), `docs/research/open-decisions.md`.
+
+**Later findings** (all read 2026-10-08)
+- [q10](../research/q10-pyav-ffmpeg-licence.md): the av 19.0.1 manylinux x86_64 wheel's contents; pyav-ffmpeg
+  `9.0.2-1`, its `patches/ffmpeg.patch` history and build script; PyAV issue #2270 and PR #967; ffmpeg.org/legal.html
+  and FFmpeg `configure` (n8.0); x264/x265 headers; Ubuntu noble ffmpeg `debian/rules` and `debian/copyright`; the GPL
+  FAQ, GPLv3 and the ASF's GPL-compatibility page.
+- [q11](../research/q11-asr-without-pyav.md): OpenAI Whisper README (MIT); `onnx-community/whisper-tiny` @ `ff41770`;
+  sherpa-onnx 1.13.8 and onnx-asr 0.12.0 wheels and sources; faster-whisper 1.2.1 PyPI metadata and wheel; Silero
+  and SpeechBrain LID pages; local runs of the scripts in `docs/research/q11/` and a uv 0.12.23 relock.
 - The research brief, `research_scenewise_project_task_prompt.md` (outside the repository): sets the Apache-2.0 code
   licence (Repository setup step 1).
 

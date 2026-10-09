@@ -164,6 +164,10 @@ def render_webvtt(cues: Sequence[Cue], *, note: str) -> str: ...
 
 ## 2. Where VAD, the language-ID gate, segmentation and the music tagger live
 
+> **Superseded in part by q11/U16 (2026-10-08).** The `LanguageIdentifier` adapter is no longer faster-whisper
+> `detect_language`: it is an in-house onnxruntime Whisper-tiny adapter (fp32, batch = 1), and the per-window rule is
+> ≥ 1.0 s of VAD speech and p(en) ≥ 0.5 ([q11](q11-asr-without-pyav.md) §2.3, §3.5). The rest of this section stands.
+
 **Conflict.** q2 §6: "VAD (scenewise's own Silero loop on pip onnxruntime), segmentation, the LID gate, the optional
 music tagger and cue building live in scenewise, not in the adapters." They need onnxruntime, numpy and
 faster-whisper, which the allow-list contracts ban from `domain`, `ports` and `app` (q8b §12). q8a has no port for them
@@ -374,6 +378,11 @@ it is added, it becomes `AudioTagger.music_scores(track, spans) -> list[float]` 
 ---
 
 ## 3. The `asr` extra and the GPU ASR path
+
+> **Superseded in part by q11/U16 (2026-10-08).** faster-whisper leaves `asr` for an opt-in `asr-whisper` extra that
+> published images leave out; the default install has no PyAV, so the PyAV paragraph below applies to `asr-whisper`
+> only. pip `onnxruntime` stays in `asr` (Silero, LID), so the GPU-ASR constraint holds ([q11](q11-asr-without-pyav.md)
+> §4, §5).
 
 **Facts.**
 - sherpa-onnx's PyPI wheels are CPU-only and bundle their own onnxruntime 1.28.2 (q2 §5.1, §5.2 [S54]; [X2]).

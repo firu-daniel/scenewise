@@ -32,7 +32,7 @@ finding. Built 2026-10-08 on macOS (arm64), Homebrew ffmpeg 9.0.2, CPython 3.12.
 | G3 | typos 1.51.1 | About 50 findings in `docs/research` (Appen, FPR, CPY001, nothink, …) | `docs/**` excluded from typos. |
 | G4 | `uv lock` | sherpa-onnx 1.13.8's armv7l wheel has no `Requires-Dist`; the universal lock took that metadata and dropped `sherpa-onnx-core` (which the x86_64/arm64 wheels require) | `sherpa-onnx-core>=1.13.8` declared in `asr`; `check_lock.sh` asserts it is in the lock. Keep the two versions equal. |
 | G5 | Version pins | `uv lock` resolved fastapi 0.143.0, released 2026-10-08 12:29 UTC (hours old), not the verified 0.142.4 | Locked to 0.142.4 with `uv lock --upgrade-package fastapi==0.142.4`. Every other package resolved to the decision document's versions. Consider `exclude-newer` or Dependabot's cooldown as the policy. |
-| G6 | huggingface-hub pin (q2 §5.2) | Not imported by any code yet | Not declared; the lock has 1.33.0 transitively (faster-whisper). Pin with item 1. |
+| G6 | huggingface-hub pin (q2 §5.2) | Not imported by any code yet | Not declared; the lock has 1.33.0 transitively (faster-whisper; since U16 only via `asr-whisper` and the vision stack). Pin with item 1. |
 | G7 | pytest `filterwarnings = error` | starlette 1.7's `TestClient` warns that httpx is deprecated in favour of `httpx2` | `httpx2==2.13.1` in the dev group. The base dependency `httpx>=0.28.1` stays (ARCHITECTURE §12) but nothing imports it yet; consider httpx2 for the adapters. |
 | G8 | deptry 0.25.1 | DEP003 `anyio` (imported by `service/http` for admission and threads, only transitive); DEP002 for every extra without an adapter, for `uvicorn` (run, not imported) and for `httpx` | `anyio>=4.15.1` added to the `service` extra; `DEP002` ignore list extended, each entry commented with the item that removes it. |
 | G9 | Core coverage 100% | A `match` without a wildcard leaves a partial "no case matched" branch even when mypy proves it exhaustive | `case _: assert_never(x)` arms plus `exclude_lines` pattern `case _:\n\s*assert_never\(` (multi-line). Reviewed config; mypy's exhaustive-match keeps it honest. |
@@ -77,6 +77,24 @@ From `docs/research/reviews/skeleton-review-r1.md`.
 
 Suppression budget unchanged (2).
 
+## U16/U17 changes
+
+Applied 2026-10-08 from `docs/research/user-decisions.md` U16/U17, [q10](research/q10-pyav-ffmpeg-licence.md) and
+[q11](research/q11-asr-without-pyav.md) (§4).
+
+| Where | Change |
+|---|---|
+| `pyproject.toml` | `asr` drops faster-whisper (and with it ctranslate2, `av`, tokenizers, huggingface-hub); new opt-in `asr-whisper = ["faster-whisper>=1.2.1"]`, commented as bringing GPL x264/x265 through PyAV and left out of published images. deptry's DEP002 entry for faster-whisper now names `asr-whisper`; the import-linter `forbidden` list keeps `ctranslate2` and `faster_whisper` (they still apply to `asr-whisper` builds). Every other pin unchanged |
+| `uv.lock` | `uv lock` (0.12.23): 130 packages, no resolved version changes; only faster-whisper's marker (`extra == 'asr-whisper'`), the new optional-dependency group and `provides-extras` change |
+| `scripts/check_lock.sh` | Also asserts that `service + asr` and both image sets (`-cpu`, `-cuda`) resolve no `av`, `ctranslate2` or `faster-whisper`, and that `asr-whisper` does resolve faster-whisper. Checked to fail when `asr-whisper` is added to the `asr` set |
+| `src/scenewise/ports.py` | Docstrings only: `LanguageIdentifier` is the Whisper-tiny ONNX adapter (q11); `SpeechRecognizer`'s faster-whisper is in `asr-whisper`. No adapter is implemented (roadmap item 1) |
+| CI | No workflow change needed: neither job selects `asr-whisper`, and `tests/models.lock` does not exist yet. When item 1 adds the fallback adapter, a separate job with `--extra asr --extra asr-whisper` runs its contract suite (q11 §4) |
+| `docs/research/q11/` | Research scripts; already outside every gate (ruff and typos exclude `docs/`, mypy, module size and vulture read only `src`/`tests`/`scripts`) |
+| Docs | ARCHITECTURE.md (§2, §4 LID adapter and gate rule, §6, §11 U17, §12 extras, §15, §17), the decision document (findings list, §1.1, Q2, Q8, §4 U16/U17, §4.3, §7.2, §7.5, §8 steps 1–3, §9), ROADMAP.md item 1, README.md, and "superseded" notes in q2 §4.4, §5.2, §5.3 and q8c §2, §3 |
+
+ffmpeg (U17): unchanged. Development uses Homebrew ffmpeg 9.0.2 (no libflite), CI Ubuntu's apt ffmpeg; the ffmpeg in
+published images is decided with the first published Dockerfile.
+
 ## Gate results (local)
 
 Static gates (CPython 3.14.7, all CPU extras synced): stray config, `uv lock --check`, `check_lock.sh`, ruff format,
@@ -92,5 +110,8 @@ Tests, `--extra service` only, CI sequence, after the review r1 fixes (3.13 was 
 
 Before the fixes: 139 unit and 226 total passed on 3.12, 3.13 and 3.14 (overall 99.62%, 99.62%, 99.57%).
 
-Not run: the workflows on GitHub (no remote yet), and a real `uvicorn` process (the HTTP tests use FastAPI's
+After U16 (static gates on 3.14.7 with all CPU extras; tiers on 3.12.14 and 3.14.7): all pass, 143 unit and 247 total
+on each, core coverage 100%, overall 98.97% (3.12) and 98.84% (3.14), nothing skipped.
+
+Not run at first: the workflows on GitHub (no remote yet; later green in run 37792034530, before U16), and a real `uvicorn` process (the HTTP tests use FastAPI's
 `TestClient` against the real app, lifespan and adapters).

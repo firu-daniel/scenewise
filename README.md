@@ -20,7 +20,7 @@ No model runs yet. The stages and the adapters that need models arrive with the 
 
 | Arrives with | Adapters and pieces |
 |---|---|
-| Item 1, captions | Silero VAD, faster-whisper language ID, Parakeet on sherpa-onnx (primary) and onnx-asr (second), faster-whisper fallback (`asr` extra); HLS and segment-list audio inputs; `tests/models.lock` and the model test tier; `NOTICE` |
+| Item 1, captions | Silero VAD, Whisper-tiny language ID on onnxruntime, Parakeet on sherpa-onnx (primary) and onnx-asr (second) (`asr` extra); the opt-in faster-whisper fallback (`asr-whisper`, brings PyAV's GPL x264/x265, not in published images; U16); HLS and segment-list audio inputs; `tests/models.lock` and the model test tier; `NOTICE` |
 | Item 2, summaries and chapters | Claude Haiku through the Anthropic SDK, first-party or Vertex AI (`llm-anthropic`); the OpenAI-compatible adapter (httpx) |
 | Items 3 and 4, moderation and labels | open_clip / SigLIP 2 and the tier-1 classifier (`vision` + a `torch-*` selector); visual inputs and frame sampling; `scenewise calibrate` |
 | Deployment work | the GCS blob store and OIDC/HMAC callbacks (`gcs`), the Dockerfile, `scenewise run-job` |

@@ -119,7 +119,7 @@ class VoiceActivityDetector(Protocol):
 
 
 class LanguageIdentifier(Protocol):
-    """faster-whisper ``tiny`` language ID (roadmap item 1)."""
+    """Whisper ``tiny`` fp32 ONNX language ID on onnxruntime (roadmap item 1, q11)."""
 
     def identify(
         self, track: Path, windows: Sequence[Sequence[TimeSpan]]
@@ -129,7 +129,7 @@ class LanguageIdentifier(Protocol):
 
 
 class SpeechRecognizer(Protocol):
-    """Parakeet on sherpa-onnx or onnx-asr, or faster-whisper (roadmap item 1)."""
+    """Parakeet on sherpa-onnx or onnx-asr, or faster-whisper (asr-whisper, item 1)."""
 
     def transcribe(
         self, track: Path, segments: Sequence[TimeSpan], *, language: str

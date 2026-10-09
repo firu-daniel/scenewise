@@ -32,7 +32,8 @@ install has no torch. [ARCHITECTURE.md](ARCHITECTURE.md) describes the layout,
 [q8a](docs/research/q8a-architecture-layout.md) and [q8b](docs/research/q8b-tooling-gates.md) give the reasoning, and
 [section 8 of the decision document](docs/decisions/initial-research.md#8-repository-setup-part-2) lists the setup steps
 and the remaining checks (Dependabot and `required-version`, test-fixture and tiny-model licences, Homebrew ffmpeg and
-libflite, and the licence of the FFmpeg libraries bundled in PyAV's wheels). Pull requests from harness runs on GitHub
+libflite; the PyAV licence is settled by [q10](docs/research/q10-pyav-ffmpeg-licence.md) and U16, and the ffmpeg in
+published images is open, U17). Pull requests from harness runs on GitHub
 Actions get normal code-owner review; pull requests from local harness runs that touch gate files need the maintainer's
 logged admin bypass (U13, U13a).
 
@@ -43,9 +44,10 @@ CC-BY-4.0, used with attribution, U4). On the Open ASR Leaderboard it has the be
 models with native word timestamps, and it beats every openly runnable Whisper variant (4.70% average WER vs
 5.40–6.36%); in the same runtime it runs about 9× faster than Whisper large-v3-turbo on CPU
 ([q2](docs/research/q2-captions.md)). It runs on `sherpa-onnx` 1.13.8 behind a `SpeechRecognizer` port (D20), with
-`onnx-asr` tested as the second runtime and faster-whisper with large-v3-turbo as the fallback. scenewise owns the
-pipeline around the model: a Silero v6.2 voice-activity loop, a language-ID gate (faster-whisper `tiny`), segmentation
-and cue building. Captions always run over one continuous audio track, never per 6-second segment, because on one
+`onnx-asr` tested as the second runtime and faster-whisper with large-v3-turbo as an opt-in fallback (`asr-whisper`,
+not in published images, U16). scenewise owns the pipeline around the model: a Silero v6.2 voice-activity loop, a
+language-ID gate (an in-house Whisper `tiny` ONNX adapter on onnxruntime,
+[q11](docs/research/q11-asr-without-pyav.md)), segmentation and cue building. Captions always run over one continuous audio track, never per 6-second segment, because on one
 synthetic clip the per-segment approach made several times more errors ([q1](docs/research/q1-input-contract.md)), so
 Expause adds one audio-only MP4 output to its Transcoder job. English is captioned when a video has at least about 2 s
 of English speech (D19); windows in an unknown language are dropped and flagged (D21). Below that, no track is emitted

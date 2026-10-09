@@ -316,6 +316,10 @@ Defaults below are identical in openai-whisper 20250625 and faster-whisper 1.2.1
 
 ### 4.4 Language-ID gate (specification)
 
+> **Superseded in part by q11/U16 (2026-10-08).** Step 3's model is now an in-house onnxruntime Whisper-tiny adapter,
+> not faster-whisper, and step 4's rule is ≥ 1.0 s of VAD speech and p(en) ≥ 0.5 per window (white noise scores an
+> argmax p of 0.48–0.57); see [q11](q11-asr-without-pyav.md) §2.3, §3.5.
+
 Parakeet v2 transcribes any speech as English. In the local test, German TTS came out as invented pseudo-English [L1]. The gate is therefore mandatory.
 
 1. **Input: VAD speech only.** Never run LID on the whole track, and call `detect_language(window, vad_filter=False)` on scenewise's own VAD windows. `detect_language` never signals "no speech": with `vad_filter=True` on a clip its VAD fully removed, it classified 30 s of zero padding and still returned "en" 0.256; on the raw synthetic music it returned "ja" 0.213; on digital silence "cy" 0.282 [S14][L1]. Running faster-whisper's VAD a second time on windows that scenewise already cut adds nothing and risks the empty-input case.
@@ -391,6 +395,10 @@ What remains:
 
 ### 5.2 Pinned versions
 
+> **Superseded in part by q11/U16 (2026-10-08).** faster-whisper is the fallback only, in the opt-in `asr-whisper`
+> extra (PyAV, GPL x264/x265: [q10](q10-pyav-ffmpeg-licence.md)); the LID weights are `onnx-community/whisper-tiny` @
+> `ff41770` fp32 ONNX, not `Systran/faster-whisper-tiny` ([q11](q11-asr-without-pyav.md) §2.3, §4).
+
 From the PyPI JSON API, GitHub releases and the HF model API, read 2026-10-08 [S31][S52].
 
 | Package or artefact | Pin | Released | Licence | Torch? | Role |
@@ -430,6 +438,9 @@ Locally, `faster-whisper` 1.2.1 resolved `huggingface-hub` to 1.33.0 even though
 **Mirror the weights.** Every pinned weight file above lives in an account scenewise does not control, several of them personal (`csukuangfj`, `istupakov`). Copy each pinned file into scenewise-controlled storage (an object-store bucket or a scenewise HF org), record the full sha256 in the lock manifest, and verify it at image build. Bake the files into the image; nothing is downloaded at runtime.
 
 ### 5.3 Licence summary and NOTICE
+
+> **Superseded in part by q11/U16 (2026-10-08).** The language-ID model is OpenAI Whisper tiny (MIT) as converted to
+> ONNX by onnx-community, whose repo states no licence ([q11](q11-asr-without-pyav.md) §1, §5).
 
 - Code: sherpa-onnx Apache-2.0 (bundled onnxruntime MIT); onnx-asr MIT (and the vendored Silero loop, if taken from its `models/silero.py`); onnxruntime MIT; faster-whisper and CTranslate2 MIT.
 - Weights: Parakeet v2 CC-BY-4.0 (attribution and indication of changes); Silero v6.2 MIT; Whisper tiny and large-v3-turbo MIT (OpenAI weights, CTranslate2 conversions also tagged MIT); audio tagger (optional) Apache-2.0.

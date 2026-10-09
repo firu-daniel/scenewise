@@ -128,9 +128,9 @@ scenewise/
     ├── adapters/             # LAYER adapters: driven implementations of ports; heavy imports live here
     │   ├── media/ffmpeg.py   #   MediaTool via subprocess (may split into probe.py + decode.py)
     │   ├── media/images.py   #   ImageReader via Pillow
-    │   ├── asr/              #   wav.py (shared span reader), silero_vad.py, whisper_lid.py; recognisers
-    │   │                     #     sherpa_parakeet.py (primary), onnx_asr_parakeet.py (tested second),
-    │   │                     #     faster_whisper.py (fallback)
+    │   ├── asr/              #   wav.py (shared span reader), silero_vad.py, whisper_lid.py (Whisper-tiny
+    │   │                     #     ONNX on onnxruntime, q11); recognisers sherpa_parakeet.py (primary),
+    │   │                     #     onnx_asr_parakeet.py (tested second), faster_whisper.py (opt-in fallback)
     │   ├── llm/openai_compat.py  # TextGenerator over an OpenAI-compatible HTTP server
     │   ├── llm/anthropic.py  #   TextGenerator on Claude Haiku, first-party or Vertex AI
     │   ├── llm/fallback.py   #   FallbackTextGenerator: wraps a primary and a secondary
@@ -235,12 +235,12 @@ class ImageReader(Protocol):  # Pillow
 class VoiceActivityDetector(Protocol):  # Silero v6.2 ONNX
     def speech_probabilities(self, track: Path) -> SpeechProbabilities: ...
 
-class LanguageIdentifier(Protocol):  # faster-whisper `tiny`
+class LanguageIdentifier(Protocol):  # Whisper `tiny` fp32 ONNX on onnxruntime (in-house, q11)
     def identify(
         self, track: Path, windows: Sequence[Sequence[TimeSpan]]
     ) -> list[LanguageGuess]: ...  # one argmax guess per window; gaps never reach Whisper
 
-class SpeechRecognizer(Protocol):  # sherpa-onnx Parakeet | onnx-asr Parakeet | faster-whisper
+class SpeechRecognizer(Protocol):  # sherpa-onnx Parakeet | onnx-asr Parakeet | faster-whisper (asr-whisper)
     def transcribe(
         self, track: Path, segments: Sequence[TimeSpan], *, language: str
     ) -> list[RecognizedSegment]: ...
@@ -275,8 +275,14 @@ class ImageGuard(Protocol):  # item 3: guard VLM; P(yes) per policy, renormalise
   emitted by ffmpeg, convertible to numpy or PIL without copying.
 - **Speech crosses ports as the one WAV track plus time spans.** Every VAD and language-ID decision (runs, ≤30 s cuts,
   LID windows, the language rule, merging into ≤30 s segments) is pure code in `domain/speech.py`. Adapters read only
-  the spans they decode; faster-whisper is always handed decoded arrays. `app` calls the recogniser in chunks of ≤300 s
+  the spans they decode; recognisers and LID are always handed decoded arrays. `app` calls the recogniser in chunks of ≤300 s
   of span audio and LID in batches of 10 windows, checking the deadline between calls.
+- **Language ID is an in-house adapter** (`adapters/asr/whisper_lid.py`, q11, U16): the fp32 encoder and fp32 decoder
+  of `onnx-community/whisper-tiny` @ `ff41770` (weights MIT, per OpenAI Whisper) on pip onnxruntime + numpy, one
+  decoder step from `<|startoftranscript|>`, softmax over the language tokens; batch = 1 by default (fp32 is
+  batch-invariant). It returns the argmax and p per window plus p(en). **Gate rule** (pure, `domain/speech.py`): a
+  window is English if it holds ≥ 1.0 s of VAD speech and p(en) ≥ 0.5; the video is captioned if its English windows
+  total ≥ 2 s of speech. faster-whisper is only the opt-in fallback recogniser (`asr-whisper`).
 - **Each port has a behavioural contract** in its docstring, checked by one shared contract suite; e.g. a
   `SpeechRecognizer` returns one `RecognizedSegment` per input span, in order, with absolute, non-decreasing token times
   inside the span.
@@ -308,7 +314,7 @@ class Speech:  # the captions stage needs all three
 
 `scenewise calibrate` gets `CalibrationDeps(store=…, images=…, labeller=…)` instead.
 
-Sources: q8a §4, §9.3; q8c §1, §2, §4.1–4.3, §7.1; D2.
+Sources: q8a §4, §9.3; q8c §1, §2, §4.1–4.3, §7.1; q11 §2.3, §3.5; D2, U16.
 
 ---
 
@@ -407,7 +413,7 @@ live in `app/stages.py`; `app/runner.py` composes them according to `domain/plan
 
 | Stage | What runs (default) | Ports | Pure core | Findings |
 |---|---|---|---|---|
-| Captions | Silero VAD, a faster-whisper `tiny` language-ID gate, speech merged into ≤30 s segments, Parakeet-TDT-0.6b-v2 on sherpa-onnx, WebVTT cues. No speech → no VTT. Unknown-language windows are dropped and flagged; English is captioned from about 2 s of it. | `MediaTool`, `VoiceActivityDetector`, `LanguageIdentifier`, `SpeechRecognizer` | `speech.py`, `captions.py`, `time.py` | [q2][q2], q8c §1–§2; D19–D21, D23 |
+| Captions | Silero VAD, a Whisper `tiny` (ONNX) language-ID gate, speech merged into ≤30 s segments, Parakeet-TDT-0.6b-v2 on sherpa-onnx, WebVTT cues. No speech → no VTT. Unknown-language windows are dropped and flagged; English is captioned from about 2 s of it. | `MediaTool`, `VoiceActivityDetector`, `LanguageIdentifier`, `SpeechRecognizer` | `speech.py`, `captions.py`, `time.py` | [q2][q2], [q11][q11], q8c §1–§2; D19–D21, D23, U16 |
 | Summary, chapters | Claude Haiku 5.5 with structured output, or a local OpenAI-compatible model. Chapters only for videos ≥ 120 s with ≥ 3 chapters; a summary only from about 40 transcript words; otherwise `skipped` / `below_minimum` (speech-only in v1). A refusal fails the stage with `model_refused`, never retried. | `TextGenerator` | `summary.py`, `chapters.py` | [q3][q3], q8c §5, §7.1; U7, U14, D18 |
 | Moderation | Tier 1: a local classifier on every sampled frame, plus SigLIP 2 prompts for the categories it does not cover. A second opinion only: it can escalate, never clear. The whole stage is item 3; tier 2 adds a guard model on ambiguous frames. | `ImageModerator`, `ZeroShotLabeller`, `ImageGuard` | `moderation.py` | [q4][q4], q8c §7.2; U1 |
 | Labels | SigLIP 2 zero-shot over an adopter-supplied TOML taxonomy (`labels_taxonomy`; `labels_max` overrides its `top_k`); calibrated thresholds from `scenewise calibrate`. A label without a fitted threshold is emitted only above the per-video relative cut `z ≥ z_min` and carries `calibrated: false`. Keeping uncalibrated labels out of `contentTags` until one `calibrate` run is Expause's integration policy, not scenewise behaviour. | `ZeroShotLabeller` | `labels.py`, `calibration.py`, `sampling.py` | [q5][q5] §6.1, q8c §4.1, §7.5; U10 (Expause) |
@@ -581,8 +587,10 @@ Sources: q8a §7.1–7.2, §9.1; q8c §3, §6.4 item 25.3, §7.4–7.5; q1 §4.0
 ffmpeg is a system dependency, called through `subprocess`:
 
 - **Why subprocess.** A decoder crash on hostile video kills a child, not the service with its loaded models, and a
-  timeout can kill a child but not a thread. PyAV and ffmpeg-python are rejected; faster-whisper still installs PyAV,
-  but always receives decoded arrays (the contract suites enforce it).
+  timeout can kill a child but not a thread. PyAV and ffmpeg-python are rejected. Only the opt-in `asr-whisper`
+  extra installs PyAV (through faster-whisper), and there it always receives decoded arrays (contract suite).
+- **Which ffmpeg (U17).** Ubuntu's apt ffmpeg (GPL-2.0-or-later) in development and CI. Published images use it or an
+  LGPL-only build, decided when the first published Dockerfile is written (q10 §5).
 - **Never given a URL.** Every input is fetched through `BlobStore` into a local file, and ffmpeg runs with
   `-protocol_whitelist file,pipe`; an HLS playlist handed to it would bypass the URI allow-list. Because `file` must
   stay allowed, every ffprobe and ffmpeg input also gets `-format_whitelist` with only the container demuxers scenewise
@@ -594,7 +602,7 @@ ffmpeg is a system dependency, called through `subprocess`:
   the Dockerfile; no `[external]` table while PEP 725 is a Draft.
 - **Output.** Frames as `rawvideo rgb24` on stdout; audio as one WAV, read with stdlib `wave`.
 
-Sources: q8a §9.1–9.2; q8c §1, §3.
+Sources: q8a §9.1–9.2; q8c §1, §3; q10; U17.
 
 ---
 
@@ -606,23 +614,27 @@ needed, D3). Everything else is an extra; version floors are in q8c §3, and `uv
 | Extra | Contents | Notes |
 |---|---|---|
 | `service` | FastAPI, uvicorn | The HTTP service. |
-| `asr` | sherpa-onnx, onnx-asr, onnxruntime, faster-whisper, numpy | CPU-only, for captions: both Parakeet runtimes (D20), Silero, faster-whisper for LID and fallback (U4). |
+| `asr` | sherpa-onnx, onnx-asr, onnxruntime, numpy | CPU-only, for captions: both Parakeet runtimes (D20), Silero and Whisper-tiny LID on onnxruntime (q11). No PyAV. |
+| `asr-whisper` | faster-whisper | Opt-in fallback recogniser (U4, U16). Brings PyAV, whose wheels bundle GPL x264/x265 (q10); not in published images. |
 | `llm-anthropic` | `anthropic[vertex]` | One adapter for first-party and Vertex AI (U5). |
 | `vision` | open-clip-torch, timm | torch comes from a `torch-*` selector. |
 | `gcs` | google-cloud-storage, google-auth | |
 | `torch-cpu` / `torch-cu130` | torch, torchvision from the PyTorch CPU or cu130 index | The selector pair, a uv `conflicts` entry. |
 
-- **`service + asr` pulls no torch and no `onnxruntime-gpu`**, which avoids the clash with faster-whisper's hard
-  `onnxruntime` dependency. `scripts/check_lock.sh` asserts the routing from `uv.lock`.
+- **`service + asr` pulls no torch, no `onnxruntime-gpu` and no PyAV**; the first two avoid the clash with the pip
+  `onnxruntime` that Silero, LID and faster-whisper need. `scripts/check_lock.sh` asserts the routing from `uv.lock`,
+  and that `av`, `ctranslate2` and `faster-whisper` appear in neither image's extra set, only via `asr-whisper`.
 - **cu130 is the GPU target**, the CUDA major shared by torch and the Cloud Run driver. `bootstrap` checks
   `torch.version.cuda`, so a `torch-cpu` install configured with `device=cuda` fails at start-up. GPU ASR is out of v1.
 - **pip users** do not get `tool.uv` routing; the README tells them which PyTorch index to pass.
 - **Images.** `-cpu` (`service`, `asr`, `llm-anthropic`, `vision`, `gcs`, `torch-cpu`) and `-cuda` (the same with
   `torch-cu130`; only vision uses the GPU) share one Dockerfile and one weights layer, baked in from a
-  scenewise-controlled mirror and checked by sha256; nothing downloads at run time.
+  scenewise-controlled mirror and checked by sha256; nothing downloads at run time. Published images ship no fallback
+  recogniser, so `asr.backend = "faster-whisper"` fails at bootstrap there with an error naming `asr-whisper`;
+  self-builders add it with a build argument and take on q10 §3. ffmpeg in published images: U17, open (§11).
 - Local LLMs run out of process behind the OpenAI-compatible adapter; no in-process llama-cpp-python.
 
-Sources: q8a §9.4–9.5; q8c §3, §8; q7 §2.5; q2 §5.2.
+Sources: q8a §9.4–9.5; q8c §3, §8; q7 §2.5; q2 §5.2; q10; q11 §4; U16.
 
 ---
 
@@ -720,7 +732,8 @@ randomised order.
 - **Contract tests** are a mixin class per port, subclassed per implementation; heavy adapters are imported inside the
   fixture, so the PR tier collects without their extras. Examples: `BlobStore` raises `WriteConflictError` on a stale
   generation (GCS against an in-memory fake); `Notifier` passes bytes unchanged; `audio_track` is pinned to 16 kHz mono
-  `pcm_s16le`; faster-whisper never calls `decode_audio` and receives an `np.ndarray`.
+  `pcm_s16le`; faster-whisper (`asr-whisper`) never calls `decode_audio` and receives an `np.ndarray`; the Whisper-tiny
+  LID gives a window the same p alone and batched.
 - **No downloads at test time.** The model tier loads only files pinned with sha256 in `tests/models.lock`, fetched once
   by `scripts/fetch_models.py` into an `actions/cache`. q2's T4 (three runtimes in one process, peak RSS) runs in the
   `models` job.
@@ -795,7 +808,9 @@ Nothing here blocks the skeleton.
 **Tooling and licences** (q8b §8)
 
 - q8b OQ3, OQ4, OQ5, OQ8 and OQ9 ([`open-decisions.md`][od] §2, Tooling).
-- The licence of the FFmpeg libraries in PyAV's wheels, for the NOTICE review (q8c §6.3 item 21).
+- PyAV's FFmpeg licence is settled (q10: GPL-3.0-or-later; only `asr-whisper` builds carry it, U16). Open: the ffmpeg
+  in published images, Ubuntu's or an LGPL-only build, decided with the first published Dockerfile (U17, q10 §5), and
+  q10 §4's **[lawyer]** items before images are published.
 - The nightly `codeowners/errors` check, once the repository exists (q8c §8).
 - **To verify before the ruleset is set up** (U13 stays decided; no finding covers these yet): (a) whether `static`
   and `test` run on PRs opened with `GITHUB_TOKEN` (GitHub starts no `pull_request` workflows for them without a PAT or
@@ -815,6 +830,8 @@ The full list is in [`open-decisions.md`][od].
 [q8a]: docs/research/q8a-architecture-layout.md
 [q8b]: docs/research/q8b-tooling-gates.md
 [q8c]: docs/research/q8c-reconciliation.md
+[q10]: docs/research/q10-pyav-ffmpeg-licence.md
+[q11]: docs/research/q11-asr-without-pyav.md
 [ud]: docs/research/user-decisions.md
 [od]: docs/research/open-decisions.md
 [roadmap]: ROADMAP.md

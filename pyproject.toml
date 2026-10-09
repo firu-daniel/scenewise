@@ -28,17 +28,20 @@ dependencies = [
 
 [project.optional-dependencies]
 service = ["fastapi>=0.142.4", "uvicorn>=0.54.0", "anyio>=4.15.1"]  # anyio: admission, threads
-asr = [                      # CPU only (q8c §3, D20, U4)
+asr = [                      # CPU only (q8c §3, D20, U4, U16, q11); no PyAV
   "sherpa-onnx>=1.13.8",
   # Its x86_64/arm64 wheels require sherpa-onnx-core, its armv7l wheel does not, and uv's
   # universal lock took the armv7l metadata and dropped core; listed so the lock has it.
   # Keep the two at the same version.
   "sherpa-onnx-core>=1.13.8",
   "onnx-asr>=0.12.0",        # no [hub], no [cpu]: weights are baked, onnxruntime is listed here
-  "onnxruntime>=1.30.0",
-  "faster-whisper>=1.2.1",
+  "onnxruntime>=1.30.0",     # Silero loop, Whisper-tiny language ID (q11), onnx-asr
   "numpy>=2.5.3",
 ]
+# Opt-in Whisper fallback recogniser (U4, U16). faster-whisper hard-requires PyAV, whose wheels
+# bundle GPL x264/x265 (q10, q11): this extra brings GPL code into the process. Published images
+# leave it out; whoever distributes an image built with it takes on q10 §3.
+asr-whisper = ["faster-whisper>=1.2.1"]
 llm-anthropic = ["anthropic[vertex]>=1.12.1"]   # first-party and Vertex AI (U5)
 vision = ["open-clip-torch>=3.3.0", "timm>=1.0.17"]  # torch comes from a torch-* selector
 gcs = ["google-cloud-storage>=3.16.0", "google-auth>=2.61.0"]
@@ -246,7 +249,8 @@ DEP002 = [
   "timm",                    # declared only to pin open-clip-torch's floor
   # Not imported yet; each leaves this list with the adapter that imports it:
   "httpx",                   # base: HTTP callbacks and the OpenAI-compatible adapter
-  "sherpa-onnx", "sherpa-onnx-core", "onnx-asr", "onnxruntime", "faster-whisper", "numpy",  # item 1 (asr)
+  "sherpa-onnx", "sherpa-onnx-core", "onnx-asr", "onnxruntime", "numpy",  # item 1 (asr)
+  "faster-whisper",          # item 1 (asr-whisper, the opt-in fallback; U16)
   "anthropic",                                                          # item 2 (llm)
   "open-clip-torch",                                                    # item 3/4 (vision)
   "google-cloud-storage", "google-auth",                                # GCS store, deployment
