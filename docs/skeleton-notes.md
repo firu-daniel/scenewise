@@ -51,7 +51,7 @@ finding. Built 2026-10-08 on macOS (arm64), Homebrew ffmpeg 9.0.2, CPython 3.12.
 
 ## Review r1 fixes
 
-From `docs/research/reviews/skeleton-review-r1.md`.
+From `docs/research/reviews/skeleton-review-r1.md` (deleted with the other review files; see `docs/research/reviews/README.md`).
 
 | Finding | Fix |
 |---|---|
@@ -60,7 +60,7 @@ From `docs/research/reviews/skeleton-review-r1.md`.
 | 3 Errors inside a stage | `_run_stage`: a `RetryableError` still fails the attempt; any other `ScenewiseError` fails the stage with its code; a `ValueError` is `invariant_violation` and any other exception `unexpected`, both internal, for the stage only (§9). Unit tests for both. |
 | 4 Unmapped errors on HTTP | Push path: a non-retryable `ScenewiseError` or any unexpected exception from the delivery answers **200** with a rejection body (`outcome: rejected`, problem with code), so Cloud Tasks stops; retryable stays 503. GET: problem+json for every error (an unreadable record is 500 `invariant_violation`). e2e test with a corrupt `status.json`. |
 | 5 Reads write to disk | `LocalBlobStore.read` returns `None` for an absent object before taking the lock; only writes create directories and lock files. Contract and e2e tests (a GET of an unknown id leaves the state tree unchanged). |
-| 6 `GITHUB_TOKEN` PRs start no CI | **Not fixed, by instruction; open harness/CI question.** PRs opened by a harness run on GitHub Actions with `GITHUB_TOKEN` trigger no `pull_request` workflow, so `static` and `test` never run on them. Options: a GitHub App installation token for agent PRs (author becomes the app, U13 needs a note), or `workflow_dispatch` on `ci.yml` dispatched by the agent workflow on the PR head. Decide before the ruleset is set up (decision document §8 step 1), together with ARCHITECTURE.md §17 open items (b) and (c). |
+| 6 `GITHUB_TOKEN` PRs start no CI | **Not fixed, by instruction; open harness/CI question.** PRs opened by a harness run on GitHub Actions with `GITHUB_TOKEN` trigger no `pull_request` workflow, so `static` and `test` never run on them. Options: a GitHub App installation token for agent PRs (author becomes the app, U13 needs a note), or `workflow_dispatch` on `ci.yml` dispatched by the agent workflow on the PR head. Decide before the ruleset is set up (decision document §8 step 1), together with ARCHITECTURE.md §17 open items (b) and (c). **Settled by U18 (2026-10-09):** harness runs on GitHub Actions open pull requests with a machine collaborator's token, so CI runs on them. |
 | 7 `required-version` exact pin | **Left as `==0.12.23`, by instruction.** Recorded risk: Dependabot's `uv` ecosystem runs its own bundled uv, which will likely refuse `uv lock` whenever its version differs, so uv dependency updates may fail and become manual (confirm on the first scheduled run). The `uv-lock` and every `uv run` pre-commit/prek hook fail the same way for contributors on a packaged uv (G1: Homebrew 0.12.21); the workaround is `uvx uv@0.12.23` or a matching uv. The alternative is setup-uv `version: "0.12.23"` plus `required-version = ">=0.12.23,<0.13"`. |
 | 8 vulture whitelist by bare name | Not fixed (not a few lines). Rule for item 1 onwards: each item deletes the entries it starts reading and adds no generic names; prefer `_.name` forms. One entry was added: `PREREQUISITES` (finding 13 removed its only reader). |
 | 9 model-marker step hides collection errors | Fixed: the step fails unless pytest exits 0 or 5. |

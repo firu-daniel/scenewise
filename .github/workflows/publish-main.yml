@@ -1,0 +1,43 @@
+# Stage a publication of main from dev on every push to dev — so each pull request merged into dev
+# becomes one commit staged on the `publish` branch, for a pull request a human merges onto main.
+# What a publication is, why it does not push to main, and the guard that refuses one, are in
+# harness-scripts/publish-main.sh. This file exists only on dev: the script removes it from what it
+# publishes, and a push event runs the workflow file as it stands in the pushed commit.
+name: publish-main
+
+on:
+  push:
+    branches: [dev]
+
+permissions: {}
+
+# One publication at a time, in push order: each is built on main's tip as it stands, so a second
+# run while a publication is still unmerged would stage a commit on the same parent.
+concurrency:
+  group: publish-main
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-24.04
+    # contents: write reaches the `publish` branch and nothing more — main takes no push from
+    # here, by ruleset. pull-requests: write is for opening the publication pull request, which
+    # succeeds only if "Allow GitHub Actions to create and approve pull requests" is on; it is off
+    # here, so the script prints the link instead and the job still passes.
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: dev
+          fetch-depth: 0
+          persist-credentials: false
+      # The token reaches git through gh's credential helper, in the runner's global git config,
+      # rather than through the checkout's .git/config.
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh auth setup-git
+          bash harness-scripts/publish-main.sh

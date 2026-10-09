@@ -1,7 +1,7 @@
 name: extended
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
   pull_request:
     types: [opened, synchronize, reopened, labeled]
   schedule:
@@ -83,4 +83,11 @@ jobs:
         run: uv audit --preview-features audit-command
       - name: zizmor online audits (impostor-commit, ref-confusion, known-vulnerable-actions, stale-action-refs)
         env: { GH_TOKEN: "${{ github.token }}" }
-        run: uv run --only-group dev zizmor --no-config .github
+        run: |   # harness-*.yml at high severity, as in ci.yml
+          shopt -s nullglob
+          product=(); harness=()
+          for f in .github/workflows/*.yml .github/workflows/*.yaml; do
+            case "${f##*/}" in harness-*) harness+=("$f") ;; *) product+=("$f") ;; esac
+          done
+          uv run --only-group dev zizmor --no-config .github/dependabot.yml "${product[@]}"
+          if [ "${#harness[@]}" -gt 0 ]; then uv run --only-group dev zizmor --no-config --min-severity high "${harness[@]}"; fi

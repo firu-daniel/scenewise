@@ -1,0 +1,52 @@
+{
+  "version": 1,
+  "projectName": "scenewise",
+  "defaultBranch": "dev",
+  "protectedBranches": [
+    "main",
+    "dev",
+    "publish"
+  ],
+  "stateDir": "sdlc-harness/",
+  "appDir": ".",
+  "scriptsDir": "harness-scripts",
+  "githooksDir": "githooks",
+  "agentModel": "opus",
+  "pushEnvPath": ".claude/push-notify.env",
+  "detection": {
+    "preset": "python-package",
+    "signal": "python-package:packaging-manifest",
+    "evidence": "pyproject.toml",
+    "commandFamily": "python"
+  },
+  "layers": [
+    {
+      "name": "package",
+      "path": "src",
+      "conventions": ".claude/context/package.md"
+    },
+    {
+      "name": "tests",
+      "path": "tests",
+      "conventions": ".claude/context/tests.md"
+    },
+    {
+      "name": "general",
+      "path": ".",
+      "conventions": ".claude/context/conventions.md"
+    }
+  ],
+  "commands": {
+    "typecheck": "bash harness-scripts/typecheck.sh",
+    "test": "bash harness-scripts/test.sh",
+    "depInstall": "bash harness-scripts/bootstrap.sh"
+  },
+  "phases": {
+    "qa": false,
+    "docs": true,
+    "parity": false
+  },
+  "docs": {
+    "root": "docs"
+  }
+}
