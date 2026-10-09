@@ -30,7 +30,7 @@
 - [ ] `job-lifecycle-and-timing` · concept · docs/concepts/job-lifecycle-and-timing.md
       title: Job Lifecycle, Leases and Timing Invariants
       entry: domain: src/scenewise/domain/jobs.py JobRecord, JobState, AttemptInfo, decide_attempt, Decision variants, wire_status ; usecases: src/scenewise/app/delivery.py handle_delivery, _attempt, _release, _finish, _give_up, src/scenewise/app/runner.py remaining ; ports: BlobStore write if_generation, WriteConflictError, ABSENT_GENERATION ; config: src/scenewise/service/config.py ServiceSettings._timing, lease_s, max_attempts ; stored_data: job record {state_prefix}/{job_id}/status.json ; reference: ARCHITECTURE.md §7-§8
-- [ ] `stages-and-outcomes` · concept · docs/concepts/stages-and-outcomes.md
+- [x] `stages-and-outcomes` · concept · docs/concepts/stages-and-outcomes.md
       title: Stages, Planning and Outcomes
       entry: domain: src/scenewise/domain/jobs.py StageName, SkipReason, src/scenewise/domain/plan.py ordered, unavailable, PREREQUISITES, src/scenewise/domain/results.py Outcome variants, StageOutcome, Analysis, job_state ; usecases: src/scenewise/app/runner.py run_job, _run_stage, src/scenewise/app/deps.py enabled_stages ; config: ServiceSettings.required_stages ; reference: ARCHITECTURE.md §6
 - [ ] `storage-and-uri-policy` · concept · docs/concepts/storage-and-uri-policy.md
