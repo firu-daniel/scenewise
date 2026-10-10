@@ -47,7 +47,10 @@
   - `_run_stage` turns a non-retryable error inside a stage into `Failed`. A `RetryableError` is re-raised.
 - `src/scenewise/app/stages.py` (`audio`): `track.read_bytes()`, nothing more.
 - `src/scenewise/app/publish.py` (`publish`, `attempt_prefix`, `AUDIO_FILE_NAME`, `WAV_MEDIA_TYPE`): writes `{prefix}/a{attempt}/audio.wav` (`audio/wav`) through `deps.store`, only when `audio_wav` is not `None`, then `result.json`.
-- `src/scenewise/app/delivery.py` (`artifacts_prefix`, `job_prefix`): `{prefix}` is `{state_prefix}/{job_id}` by default, or `{delivery.artifacts.uri_prefix}/{job_id}`. That prefix may not point into the state prefix (`uri_not_allowed`).
+- `src/scenewise/app/delivery.py` (`artifacts_prefix`, `job_prefix`): `{prefix}` is `{state_prefix}/{job_id}` by default, or `{delivery.artifacts.uri_prefix}/{job_id}`. A requested prefix fails the whole job with `uri_not_allowed`, before `audio.wav` is written, when:
+  - it carries a query or fragment, has a relative path, or cannot be parsed as a URI (`_shape_refusal`);
+  - the job folder `{uri_prefix}/{job_id}` equals the state prefix, lies under it, or contains it. Both sides are normalised first: scheme and host case, `localhost`, percent-escapes, dot segments and repeated slashes (`_location`). So a parent of the state directory plus a job id equal to the state directory's basename is refused.
+  - The caller's own spelling is what gets used. Symlinks and other spellings of a parent directory are left to the output store's fence (see service).
 - `src/scenewise/app/deps.py` (`Dependencies.inputs` vs `Dependencies.store`): inputs are read through `inputs` only. The WAV is written through `store` only.
 - **Wire contract:**
   - `src/scenewise/app/contract/requests.py` (`AudioFileV1`, `NoAudioV1`, `AudioInputV1`): a `kind`-discriminated union, `extra="forbid"`.
@@ -80,6 +83,7 @@
 ### service
 - `src/scenewise/service/bootstrap.py` (`_stores`, `build_dependencies`):
   - Builds the input store as `LocalBlobStore(roots=settings.inputs.local_roots, excluded=outputs)`, kept separate from the output store.
+  - Builds the output store, which writes `audio.wav`, as `LocalBlobStore(roots=outputs, fenced=(state_path,))`. A path that resolves into the state directory, by name or by file identity, is refused with `uri_not_allowed` unless it is written inside it. That covers symlinks, other spellings of a parent and case-changed spellings (`src/scenewise/adapters/storage/local.py` (`LocalBlobStore._path`, `_enters`, `_spelt`)).
   - Builds `FfmpegMediaTool`.
   - Checks `required_stages` against `enabled_stages`.
   - Only `file://` state prefixes are supported (`store_unavailable` otherwise).
@@ -133,8 +137,8 @@
 - `src/scenewise/domain/results.py` (`Analysis`): `audio_wav`
 - `src/scenewise/ports.py` (`MediaTool`, `AUDIO_SAMPLE_RATE`): port contract
 - `src/scenewise/adapters/media/ffmpeg.py` (`FfmpegMediaTool`): ffprobe and ffmpeg
-- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): input allow-list
-- `src/scenewise/service/bootstrap.py` (`build_dependencies`): wiring
+- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`, `_enters`): input allow-list, and the output store's state-directory fence
+- `src/scenewise/service/bootstrap.py` (`build_dependencies`, `_stores`): wiring, including the two stores
 - `src/scenewise/service/cli.py` (`analyse`): CLI entry
 - `src/scenewise/service/config.py` (`ServiceSettings`, `InputSettings`): `required_stages`, `local_roots`
 - `tests/unit/test_audio.py`, `tests/unit/test_runner.py`, `tests/contract/mediatool_contract.py`, `tests/e2e/test_cli.py`: coverage

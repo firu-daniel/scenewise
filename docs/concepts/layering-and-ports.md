@@ -57,7 +57,7 @@ The harness's `package` layer is the import-linter `ports` layer plus the two to
 1. `build_dependencies(settings)` first imports `FfmpegMediaTool`, `find_binaries` and `PillowImageReader` inside the function. It then calls `find_binaries(ffmpeg=…, ffprobe=…, min_major=…)`, which raises `ConfigurationError` `ffmpeg_unavailable` or `ffmpeg_too_old` (`src/scenewise/adapters/media/ffmpeg.py` `find_binaries`).
 2. It calls `enabled_stages(speech=None, text=None, moderator=None, labeller=None)`, because no model back end is wired yet. If `settings.service.required_stages` names a stage outside the result, it raises `ConfigurationError(code="stage_unavailable")`, so the process never becomes ready.
 3. `_stores(settings)` uses a `match` on the scheme of `settings.service.state_prefix`:
-   - `case "file"` imports `LocalBlobStore` lazily and builds two stores. The output store gets `roots=[state path, *service.artifact_roots]`. The input store gets `roots=inputs.local_roots` and `excluded=outputs`, so even when an input root contains the state or artifact directories, inputs can never be read from there (`src/scenewise/adapters/storage/local.py` `LocalBlobStore.__init__`; `docs/skeleton-notes.md` A6).
+   - `case "file"` imports `LocalBlobStore` lazily and builds two stores. The output store gets `roots=[state path, *service.artifact_roots]` and `fenced=(state path,)`, so an artifact URI cannot reach the state directory through a symlink or another spelling of its path. The input store gets `roots=inputs.local_roots` and `excluded=outputs`, so even when an input root contains the state or artifact directories, inputs can never be read from there (`src/scenewise/adapters/storage/local.py` `LocalBlobStore.__init__`; `docs/skeleton-notes.md` A6).
    - Any other scheme raises `ConfigurationError(code="store_unavailable")`.
 4. It returns `Dependencies(store=…, inputs=…, media=FfmpegMediaTool(ffmpeg=…, ffprobe=…), images=PillowImageReader(), enabled_stages=…)`. Adapters receive keyword arguments read off `Settings`, never `Settings` itself.
 
@@ -105,7 +105,7 @@ The module docstring gives the plan for extension: back ends behind an optional 
 - `src/scenewise/ports.py` (`BlobStore`, `MediaTool`, `ImageReader`, `Notifier`, `Blob`, `WriteConflictError`, `ABSENT_GENERATION`): every port and its contract.
 - `src/scenewise/app/deps.py` (`Dependencies`, `Speech`, `enabled_stages`): the port bundle and how enabled stages are worked out.
 - `src/scenewise/service/bootstrap.py` (`build_dependencies`, `_stores`): the composition root.
-- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the `file://` `BlobStore` with root and excluded allow-lists.
+- `src/scenewise/adapters/storage/local.py` (`LocalBlobStore`): the `file://` `BlobStore` with root, excluded and fenced lists.
 - `src/scenewise/adapters/media/ffmpeg.py` (`FfmpegMediaTool`, `find_binaries`): the `MediaTool` adapter and the start-up binary check.
 - `src/scenewise/adapters/media/images.py` (`PillowImageReader`): the `ImageReader` adapter.
 - `src/scenewise/service/http/app.py` (`create_app`): builds the bundle in the HTTP lifespan.

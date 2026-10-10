@@ -97,7 +97,7 @@ Cloud Tasks retries every non-2xx response. For that reason, every non-retryable
 ### Where codes originate in adapters
 
 - `LocalBlobStore` (`src/scenewise/adapters/storage/local.py` (`LocalBlobStore._path`, `LocalBlobStore.materialise`, `LocalBlobStore.read`, `LocalBlobStore.write`)):
-  - `uri_not_allowed` comes from `LocalBlobStore._path`, which every access calls. It is raised for a non-`file://` URI and for a path outside the allowed roots or inside an excluded one.
+  - `uri_not_allowed` comes from `LocalBlobStore._path`, which every access calls. It is raised for a non-`file://` URI, for a path outside the allowed roots or inside an excluded one, and for a path that resolves into a fenced root without being spelt inside it (the output store fences the state directory). `artifacts_prefix` (`src/scenewise/app/delivery.py`) also raises it, without touching a store, for a `uri_prefix` whose job folder normalises to the state prefix, under it, or to a folder containing it, and for one with a query, a fragment or a relative path.
   - `input_unavailable` ("no such file") comes only from `LocalBlobStore.materialise`. `LocalBlobStore.read` returns `None` for a missing file and does not raise.
   - `storage_unavailable` with `detail=type(e).__name__` comes from `LocalBlobStore.read` and `LocalBlobStore.write`.
 - `FfmpegMediaTool` (`src/scenewise/adapters/media/ffmpeg.py` (`_run`, `FfmpegMediaTool._media`, `FfmpegMediaTool.probe`, `_media_info`, `FfmpegMediaTool.video_frames`)):
