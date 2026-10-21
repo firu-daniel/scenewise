@@ -569,7 +569,7 @@ jobs:
       - name: Restore the docs-retrieval cache
         if: env.HARNESS_STOPPED != '1' && steps.config.outputs.retrieval == 'true'
         # actions/cache/restore v5.1.0
-        uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9
         with:
           path: ${{ env.HARNESS_RETRIEVAL_CACHE }}
           key: harness-retrieval-${{ runner.os }}-${{ env.HARNESS_CLI_VERSION }}
