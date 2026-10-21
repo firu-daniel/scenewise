@@ -165,7 +165,9 @@ def test_a_case_changed_spelling_cannot_enter_a_fenced_root(
     with pytest.raises(InputError) as caught:
         store.write((tmp_path / "out" / "STATE" / "x").as_uri(), b"x", content_type="x")
     assert caught.value.code == "uri_not_allowed"
-    assert not (tmp_path / "out" / "STATE").exists()
+    # Listed, not probed: on a case-insensitive host "STATE" resolves to "state".
+    assert [p.name for p in (tmp_path / "out").iterdir()] == ["state"]
+    assert not any((tmp_path / "out" / "state").iterdir())
     store.write((tmp_path / "out" / "artifacts" / "x").as_uri(), b"x", content_type="x")
     assert (tmp_path / "out" / "artifacts" / "x").read_bytes() == b"x"
 
