@@ -6,9 +6,12 @@ so an attempt whose lease expired cannot overwrite a later attempt's terminal re
 Callbacks (step 7's notify) arrive with the HTTP callback adapter.
 """
 
+import posixpath
 import time
 from dataclasses import dataclass, replace
+from pathlib import PurePosixPath
 from typing import Final, assert_never
+from urllib.parse import unquote, urlsplit
 
 import structlog
 
@@ -111,21 +114,74 @@ def job_status(
     return mapping.status_json(mapping.record_from_json(blob.data), now)
 
 
+def _location(uri: str) -> tuple[str, str, PurePosixPath]:
+    """``(scheme, host, path)`` of ``uri``, normalised for comparison only.
+
+    URI-level only: case of scheme and host, ``localhost`` for ``file`` (RFC 8089
+    §2), percent-escapes, dot segments and repeated slashes. No symlink is followed.
+    A string ``urlsplit`` cannot parse yields an empty scheme, which matches no
+    real prefix.
+    """
+    try:
+        parts = urlsplit(uri)
+    except ValueError:
+        return ("", "", PurePosixPath("/"))
+    host = parts.netloc.lower()
+    if parts.scheme == "file" and host == "localhost":
+        host = ""
+    path = unquote(parts.path) or "/"
+    # normpath keeps exactly two leading slashes
+    path = posixpath.normpath("/" + path.lstrip("/"))
+    return (parts.scheme, host, PurePosixPath(path))
+
+
+def _shape_refusal(requested: str) -> str | None:
+    """Why ``requested`` cannot be a prefix, or ``None`` when its shape is fine.
+
+    ``?`` and ``#`` are tested on the raw string: ``urlsplit`` drops an empty
+    query or fragment, and the store reads only the path, so every job would share
+    one file.
+    """
+    if "?" in requested or "#" in requested:
+        return "artifacts uri_prefix may not carry a query or fragment"
+    try:
+        path = unquote(urlsplit(requested).path)
+    except ValueError:
+        return "artifacts uri_prefix is not a valid URI"
+    if path and not path.startswith("/"):
+        return "artifacts uri_prefix must have an absolute path"
+    return None
+
+
 def artifacts_prefix(job: Job, state_prefix: str) -> str:
     """Where this job's artifacts go: always a folder of its own.
 
     A requested ``uri_prefix`` gets the job id appended, so one job can never write
-    into another job's folder, and it may not point into the state prefix at all.
-    The store's allow-list decides which other roots are writable.
+    into another job's folder. The job folder ``{uri_prefix}/{job_id}`` - not just
+    the requested prefix - is compared with the state prefix after both are
+    normalised (scheme and host case, ``localhost``, percent-escapes, dot segments,
+    repeated slashes) and may not lie at or under it, nor contain it, so a parent
+    of the state directory plus a job id equal to its basename is refused, and so
+    is a job folder whose ``a{attempt}`` subfolder would be the state directory.
+    Queries, fragments and relative paths are refused. The caller's own spelling
+    is returned. Symlinks and which other roots are writable are the output store's
+    concern.
     """
     if job.artifacts_prefix is None:
         return job_prefix(state_prefix, job.id)
-    requested = job.artifacts_prefix.rstrip("/")
-    state = state_prefix.rstrip("/")
-    if requested == state or requested.startswith(f"{state}/"):
+    shape = _shape_refusal(job.artifacts_prefix)
+    if shape is not None:
+        raise InputError(code="uri_not_allowed", detail=shape)
+    folder = job_prefix(job.artifacts_prefix.rstrip("/"), job.id)
+    scheme, host, path = _location(folder)
+    state_scheme, state_host, state_path = _location(state_prefix)
+    same_authority = (scheme, host) == (state_scheme, state_host)
+    if same_authority and (
+        path.is_relative_to(state_path) or state_path.is_relative_to(path)
+    ):
         detail = "artifacts may not be written under the state prefix"
         raise InputError(code="uri_not_allowed", detail=detail)
-    return job_prefix(requested, job.id)
+    return folder
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)

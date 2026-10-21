@@ -12,14 +12,28 @@ from scenewise.app.delivery import (
     Finished,
     Rejected,
     TryLater,
+    artifacts_prefix,
     handle_delivery,
     job_prefix,
     job_status,
     record_uri,
 )
 from scenewise.app.deps import Dependencies
-from scenewise.domain.errors import InternalError, JobIdConflictError, RetryableError
-from scenewise.domain.jobs import AttemptInfo, JobRecord, JobState
+from scenewise.domain.errors import (
+    InputError,
+    InternalError,
+    JobIdConflictError,
+    RetryableError,
+)
+from scenewise.domain.jobs import (
+    AttemptInfo,
+    Job,
+    JobRecord,
+    JobSpec,
+    JobState,
+    StageName,
+    job_id,
+)
 from scenewise.domain.time import Seconds
 from scenewise.ports import WriteConflictError
 from tests.fakes import (
@@ -32,6 +46,17 @@ from tests.fakes import (
 NOW = 1_000_000.0
 STATUS = "mem://state/j-1/status.json"
 POLICY = DeliveryPolicy(state_prefix="mem://state", attempt_budget=Seconds(60))
+STATE = "file:///srv/state"
+BUCKET_STATE = "mem://bucket/state"
+
+
+def _job_with(prefix: str | None, job: str = "j") -> Job:
+    return Job(
+        id=job_id(job),
+        spec=JobSpec(stages=frozenset({StageName.AUDIO})),
+        audio=None,
+        artifacts_prefix=prefix,
+    )
 
 
 def _info(max_attempts: int = 3) -> AttemptInfo:
@@ -177,13 +202,142 @@ def test_artifacts_go_to_the_requested_prefix() -> None:
     assert status["result_uri"] == "mem://out/x/j-1/a1/result.json"
 
 
-@pytest.mark.parametrize("prefix", ["mem://state", "mem://state/other-job"])
+@pytest.mark.parametrize(
+    "prefix",
+    ["mem://state", "mem://state/other-job", "mem://state/../state/other-job"],
+)
 def test_artifacts_never_go_under_the_state_prefix(prefix: str) -> None:
     store = _store()
     raw = _raw(delivery={"artifacts": {"uri_prefix": prefix}})
     status = _status(_deliver(fake_dependencies(store=store), raw))
     assert (status["status"], status["error_code"]) == ("failed", "uri_not_allowed")
     assert not any(uri.startswith("mem://state/other-job") for uri in store.objects)
+
+
+@pytest.mark.parametrize(
+    ("state", "prefix"),
+    [
+        (STATE, "file:///srv/artifacts/../state/victim"),
+        (STATE, "file:///srv/state/../state/victim"),
+        (STATE, "file:///srv/./state/victim"),
+        (STATE, "file:///srv//state/victim"),
+        (STATE, "file:////srv/state/victim"),
+        (STATE, "file:///srv/artifacts/%2E%2E/state/victim"),
+        (STATE, "file:///srv/artifacts%2F..%2Fstate/victim"),
+        (STATE, "file://localhost/srv/state/victim"),
+        (STATE, "FILE:///srv/state/victim"),
+        (STATE, "file:///srv/state"),
+        (STATE, "file:///srv/state/"),
+        (STATE, "file:///srv/artifacts/x/../../state"),
+        (BUCKET_STATE, "mem://bucket/out/../state/x"),
+    ],
+)
+def test_a_prefix_that_normalises_into_the_state_prefix_is_refused(
+    state: str, prefix: str
+) -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with(prefix), state)
+    assert caught.value.code == "uri_not_allowed"
+
+
+@pytest.mark.parametrize(
+    ("state", "prefix", "job"),
+    [
+        (STATE, "file:///srv", "state"),
+        (STATE, "file:///srv/", "state"),
+        (STATE, "file:///srv/artifacts/..", "state"),
+        (BUCKET_STATE, "mem://bucket", "state"),
+    ],
+)
+def test_a_prefix_whose_job_folder_is_the_state_prefix_is_refused(
+    state: str, prefix: str, job: str
+) -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with(prefix, job), state)
+    assert caught.value.code == "uri_not_allowed"
+
+
+@pytest.mark.parametrize(
+    ("state", "prefix", "job"),
+    [
+        ("file:///srv/a1", "file:///", "srv"),
+        ("file:///srv/a1", "file:///srv/..", "srv"),
+        (STATE, "file:///", "srv"),
+        ("mem://bucket/x/a1", "mem://bucket", "x"),
+    ],
+)
+def test_a_job_folder_that_contains_the_state_prefix_is_refused(
+    state: str, prefix: str, job: str
+) -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with(prefix, job), state)
+    assert caught.value.code == "uri_not_allowed"
+
+
+def test_a_parent_prefix_with_another_job_id_is_accepted() -> None:
+    assert artifacts_prefix(_job_with("file:///srv", "other"), STATE) == (
+        "file:///srv/other"
+    )
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        "file:///srv/artifacts/x?a=b",
+        "file:///srv/artifacts/x#f",
+        "file:///srv/artifacts/x?",
+        "file:///srv/artifacts/x#",
+        "file:state/victim",
+        "file:./state",
+    ],
+)
+def test_a_prefix_with_a_query_fragment_or_relative_path_is_refused(
+    prefix: str,
+) -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with(prefix), STATE)
+    assert caught.value.code == "uri_not_allowed"
+
+
+def test_a_prefix_that_is_not_a_valid_uri_is_refused() -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with("file://[/srv"), STATE)
+    assert (caught.value.code, caught.value.detail) == (
+        "uri_not_allowed",
+        "artifacts uri_prefix is not a valid URI",
+    )
+
+
+def test_an_unparsable_state_prefix_refuses_a_scheme_less_prefix() -> None:
+    with pytest.raises(InputError) as caught:
+        artifacts_prefix(_job_with("/srv/x"), "file://[/srv")
+    assert caught.value.code == "uri_not_allowed"
+
+
+def test_an_unparsable_state_prefix_accepts_a_prefix_with_a_scheme() -> None:
+    assert artifacts_prefix(_job_with("file:///srv/x"), "file://[/srv") == (
+        "file:///srv/x/j"
+    )
+
+
+@pytest.mark.parametrize(
+    ("state", "prefix", "expected"),
+    [
+        (STATE, "file:///srv/statefoo/x", "file:///srv/statefoo/x/j"),
+        (STATE, "file:///srv/artifacts/media-1/", "file:///srv/artifacts/media-1/j"),
+        (STATE, "file://otherhost/srv/state/x", "file://otherhost/srv/state/x/j"),
+        (BUCKET_STATE, "mem://out/x", "mem://out/x/j"),
+        (BUCKET_STATE, "gs://bucket", "gs://bucket/j"),
+    ],
+)
+def test_a_prefix_outside_the_state_prefix_keeps_its_own_spelling(
+    state: str, prefix: str, expected: str
+) -> None:
+    assert artifacts_prefix(_job_with(prefix), state) == expected
+
+
+def test_no_requested_prefix_puts_artifacts_in_the_job_folder() -> None:
+    assert artifacts_prefix(_job_with(None), STATE) == "file:///srv/state/j"
 
 
 def test_duplicate_is_answered_from_the_record() -> None:

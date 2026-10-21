@@ -4,6 +4,10 @@ Each object ``name`` has a sidecar ``.name.meta.json`` holding its generation an
 content type. Reads and writes of one object hold an exclusive ``flock`` on
 ``.name.lock``, so concurrent writers on one host (threads or processes) serialise;
 the data file is replaced atomically. Network file systems are not supported.
+
+A ``fenced`` root is reachable only through its own spelling: the output store
+fences the state directory so an artifact URI cannot reach it through a symlink
+or another spelling of a parent directory.
 """
 
 import fcntl
@@ -11,7 +15,7 @@ import json
 import os
 import tempfile
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from pathlib import Path
 from typing import Final
 from urllib.parse import urlsplit
@@ -26,14 +30,23 @@ _HAND_PLACED_GENERATION: Final = 1  # a file placed by hand, with no sidecar
 class LocalBlobStore:
     """Objects under a fixed set of root directories, addressed by ``file://`` URI."""
 
-    def __init__(self, *, roots: Sequence[Path], excluded: Sequence[Path] = ()) -> None:
+    def __init__(
+        self,
+        *,
+        roots: Sequence[Path],
+        excluded: Sequence[Path] = (),
+        fenced: Sequence[Path] = (),
+    ) -> None:
         """Allow access only below ``roots`` and never below ``excluded``.
 
         ``excluded`` keeps an input store out of the state and artifact directories
-        even when an input root contains them.
+        even when an input root contains them. A path may enter a ``fenced`` root
+        only by being spelt inside it, so a symlink or another spelling of a parent
+        directory cannot reach it.
         """
         self._roots = tuple(root.resolve() for root in roots)
         self._excluded = tuple(path.resolve() for path in excluded)
+        self._fenced = tuple((root.resolve(), _spelt(root)) for root in fenced)
 
     def _path(self, uri: str) -> Path:
         parts = urlsplit(uri)
@@ -41,9 +54,16 @@ class LocalBlobStore:
             raise InputError(
                 code="uri_not_allowed", detail="only file:// URIs are local"
             )
-        path = Path(url2pathname(parts.path)).resolve()
+        requested = Path(url2pathname(parts.path))
+        path = requested.resolve()
         allowed = any(path.is_relative_to(root) for root in self._roots)
         if not allowed or any(path.is_relative_to(x) for x in self._excluded):
+            raise InputError(code="uri_not_allowed", detail="path is not allowed")
+        spelling = _spelt(requested)
+        if any(
+            _enters(path, real) and not spelling.is_relative_to(spelt)
+            for real, spelt in self._fenced
+        ):
             raise InputError(code="uri_not_allowed", detail="path is not allowed")
         return path
 
@@ -117,6 +137,28 @@ class LocalBlobStore:
             raise RetryableError(
                 code="storage_unavailable", detail=type(e).__name__
             ) from e
+
+
+def _enters(path: Path, real: Path) -> bool:
+    """Whether the resolved ``path`` lies in directory ``real``, by name or identity.
+
+    ``resolve()`` does not fold case, so on a case-insensitive file system a
+    case-changed spelling of ``real`` is the same directory under another name.
+    """
+    if path.is_relative_to(real):
+        return True
+    for parent in (path, *path.parents):
+        with suppress(OSError):
+            if parent.samefile(real):
+                return True
+    return False
+
+
+def _spelt(path: Path) -> Path:
+    """Absolute and lexically normalised; no file-system access, no symlinks."""
+    # normpath keeps a leading "//" (POSIX leaves it implementation-defined).
+    absolute = "/" + str(path.absolute()).lstrip("/")
+    return Path(os.path.normpath(absolute))
 
 
 def _replace(path: Path, data: bytes) -> None:

@@ -17,15 +17,20 @@ from scenewise.service.config import Settings
 
 
 def _stores(settings: Settings) -> tuple[BlobStore, BlobStore]:
-    """The output store (records, artifacts) and the separate input store."""
+    """The output store (records, artifacts) and the separate input store.
+
+    The output store fences the state directory, so artifacts cannot reach it
+    through a symlink or another spelling of its path.
+    """
     state = urlsplit(settings.service.state_prefix)
     match state.scheme:
         case "file":
             from scenewise.adapters.storage.local import LocalBlobStore
 
-            outputs = [Path(url2pathname(state.path)), *settings.service.artifact_roots]
+            state_path = Path(url2pathname(state.path))
+            outputs = [state_path, *settings.service.artifact_roots]
             return (
-                LocalBlobStore(roots=outputs),
+                LocalBlobStore(roots=outputs, fenced=(state_path,)),
                 LocalBlobStore(roots=settings.inputs.local_roots, excluded=outputs),
             )
         case scheme:

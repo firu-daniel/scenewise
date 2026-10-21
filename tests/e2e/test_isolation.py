@@ -54,26 +54,61 @@ def test_cross_job_read_is_refused(victim: Path) -> None:
 
 
 @pytest.mark.parametrize(
-    "prefix",
+    ("prefix", "job"),
     [
-        "{state}/victim",
-        "{state}",
-        "{state}/../state/victim",
-        "{root}/artifacts/../state/victim",
+        ("{state}/victim", "attacker"),
+        ("{state}", "attacker"),
+        ("{state}/../state/victim", "attacker"),
+        ("{root}/artifacts/../state/victim", "attacker"),
+        ("{root}/./state/victim", "attacker"),
+        ("{root}//state/victim", "attacker"),
+        ("{root}/artifacts/%2E%2E/state/victim", "attacker"),
+        ("file://localhost{state_path}/victim", "attacker"),
+        # The state directory is ``{root}/state``, so job ``state`` lands on it.
+        ("{root}", "state"),
+        ("{root}/artifacts/..", "state"),
     ],
 )
 def test_cross_job_overwrite_is_refused(
-    victim: Path, inputs: Path, prefix: str
+    victim: Path, inputs: Path, prefix: str, job: str
 ) -> None:
     result = victim / "victim" / "a1" / "result.json"
     before = result.read_bytes()
-    uri = prefix.format(state=victim.as_uri(), root=victim.parent.as_uri())
+    before_tree = set(victim.rglob("*"))
+    uri = prefix.format(
+        state=victim.as_uri(), root=victim.parent.as_uri(), state_path=victim.as_posix()
+    )
     with _client(victim, local_roots=(inputs,)) as client:
-        body = _job("attacker", (inputs / "tone.m4a").as_uri(), uri)
-        client.post("/v1/jobs", json=body)
+        body = _job(job, (inputs / "tone.m4a").as_uri(), uri)
+        status = client.post("/v1/jobs", json=body).json()
+    assert (status["status"], status["error_code"]) == ("failed", "uri_not_allowed")
     assert result.read_bytes() == before
     assert json.loads(before)["job_id"] == "victim"
     assert not (victim / "victim" / "a1" / "attacker").exists()
+    assert not (victim / "a1").exists()
+    created = {
+        p.relative_to(victim).as_posix() for p in set(victim.rglob("*")) - before_tree
+    }
+    record = {
+        job,
+        f"{job}/status.json",
+        f"{job}/.status.json.meta.json",
+        f"{job}/.status.json.lock",
+    }
+    assert created <= record
+
+
+def test_a_symlink_into_the_state_prefix_is_refused(victim: Path, inputs: Path) -> None:
+    artifacts = victim.parent / "artifacts"
+    artifacts.mkdir(exist_ok=True)
+    (artifacts / "link").symlink_to(victim / "victim")
+    with _client(victim, local_roots=(inputs,)) as client:
+        body = _job(
+            "attacker", (inputs / "tone.m4a").as_uri(), (artifacts / "link").as_uri()
+        )
+        status = client.post("/v1/jobs", json=body).json()
+    assert (status["status"], status["error_code"]) == ("failed", "uri_not_allowed")
+    assert not (victim / "victim" / "attacker").exists()
 
 
 def test_artifacts_under_an_artifact_root_are_job_scoped(

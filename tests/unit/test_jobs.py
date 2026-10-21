@@ -46,7 +46,9 @@ def test_job_id_accepts(value: str) -> None:
     assert job_id(value) == value
 
 
-@pytest.mark.parametrize("value", ["", ".", "..", "a/b", "a b", "x" * 201, "é"])
+@pytest.mark.parametrize(
+    "value", ["", ".", "..", "a/b", "a b", "x" * 201, "é", "%2e%2e", "a\\b"]
+)
 def test_job_id_rejects(value: str) -> None:
     with pytest.raises(ValueError, match="invalid job id"):
         job_id(value)
