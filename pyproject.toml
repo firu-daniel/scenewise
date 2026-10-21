@@ -23,7 +23,7 @@ dependencies = [
   "pydantic-settings>=2.15.0",
   "structlog>=26.1.0",
   "httpx>=0.28.1",
-  "pillow>=12.3.0",          # ImageReader is always needed (D3)
+  "pillow>=13.0.0",          # ImageReader is always needed (D3)
 ]
 
 [project.optional-dependencies]
