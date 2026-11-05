@@ -10,6 +10,11 @@ Later decisions are in [`user-decisions.md`][ud]: U-numbers are the user's; D-nu
 user overrides them. Evidence and rejected alternatives stay in the research; each section ends with its sources. "Item
 n" means roadmap item n in [`ROADMAP.md`][roadmap]. Open questions are in [§17](#17-open-items).
 
+**Design and code.** This document is the v1 design. In the code as it stands only the `audio` stage is wired, and
+several designed pieces are not built yet; each section says which, so a reader cannot take a design statement for
+current behaviour. Where the skeleton deliberately departs from the design, [`docs/skeleton-notes.md`][notes] records
+it, and this document cites its row: A-numbers are its deviations, G-numbers its gate-configuration findings.
+
 ## Contents
 
 1. [At a glance](#1-at-a-glance)
@@ -52,7 +57,7 @@ n" means roadmap item n in [`ROADMAP.md`][roadmap]. Open questions are in [§17]
 
 ## 2. Layout
 
-The tree is the v1 target. Moderation is item 3 and labels are item 4; their ports and modules are in the tree so that
+The tree is the v1 target, not the current code ("Built so far", after the tree). Moderation is item 3 and labels are item 4; their ports and modules are in the tree so that
 the skeleton's seams are complete. Lines marked "item 3" or "item 4" are the extra modules only those items add (the
 guard, `calibrate`, the taxonomy loader). `LAYER` names the import-linter layer.
 
@@ -151,6 +156,19 @@ scenewise/
                               #     watchdog), problems.py (RFC 9457)
 ```
 
+**Built so far.** The skeleton has part of this tree: A10 lists the modules present and absent, and A13 the files not
+created yet (`NOTICE`, `Dockerfile`, `tests/models.lock`, `scripts/fetch_models.py`). Not built yet, among others: the
+domain modules `uris`, `manifests`, `captions`, `chapters`, `summary`, `sampling`, `moderation`, `calibration` and
+`segments`; `app/frames.py`, `app/llm_output.py`, `app/calibrate.py` and `app/contract/taxonomy.py`; every ASR, LLM,
+vision, GCS, https, `by_scheme` and notify adapter; the CLI's `run-job` and `calibrate`. The skeleton adds two modules
+the tree does not show: `app/contract/records.py` (`JobRecordV1`, the stored form of the job record) and
+`service/http/state.py` (`ServiceState`, what the HTTP layer holds for the life of the process). `scripts/` also holds
+`check_stray_config.py` and `check_junit.py` ([§16](#16-gates); G14, G15). Some present modules hold only part of
+what their tree comment lists: `domain/speech.py` has only its three value types, `domain/labels.py` only
+`LabelScores` (no `Label`, prompt set, `frame_scores()` or `select()`), `domain/jobs.py` has no `StageOptions`,
+`app/deps.py` no `CalibrationDeps`, and `tests/fakes.py` fakes only three ports (`InMemoryBlobStore`,
+`FakeMediaTool`, `FakeImageReader`).
+
 Naming rules: no `utils.py`; `logs.py`, so the stdlib `logging` is not shadowed. Ports live in one `ports.py`, every
 seam on one screen; if its first draft exceeds about 200 lines, it starts as `ports/`, one module per port kind
 re-exported from `__init__.py`. Every optional SDK import sits at the top of the one adapter module that wraps it; the
@@ -192,7 +210,8 @@ practice:
 - **`adapters`** implement ports and never import `app` or `service.config`; `bootstrap` passes keyword arguments.
 - **`service`** is the driving side. Only `bootstrap.py` imports `adapters`, lazily, inside the `match` branch that
   selects a back end, so a missing extra is `ConfigurationError(code=…, detail="install scenewise[asr]")`, not an
-  `ImportError`.
+  `ImportError`. No back end sits behind an extra yet: `build_dependencies` imports the ffmpeg and Pillow adapters
+  (base dependencies) at its top, and `_stores` imports the local store inside its `file` branch.
 - **One wire contract.** HTTP, `publish.py` and `delivery.py` all serialise through `app/contract/`; the notifier
   receives pre-serialised bytes.
 
@@ -268,10 +287,16 @@ class ImageGuard(Protocol):  # item 3: guard VLM; P(yes) per policy, renormalise
     def p_yes(self, frame: Frame, policies: Sequence[str]) -> list[float]: ...
 ```
 
-- **Frames and audio are not ports.** `app/frames.py` and `app/audio.py` `match` on the input union and call
-  `MediaTool`, `ImageReader` and `BlobStore`. Frames come in batches (default 32). Audio always ends in one
-  `audio_track()` call producing a 16 kHz mono `pcm_s16le` WAV. Segment lists and HLS playlists are fetched through
-  `BlobStore` and parsed by the pure `domain/manifests.py`, with count and byte limits.
+**Implemented so far:** `BlobStore` (`adapters/storage/local.py`, `file://` only), `MediaTool`
+(`adapters/media/ffmpeg.py`) and `ImageReader` (`adapters/media/images.py`). The other seven ports are declared in
+`ports.py` with no implementation yet, and `ImageGuard` is not declared (A10); the speech, language-ID, LLM, vision and
+notify statements below are their design.
+
+- **Frames and audio are not ports.** `app/frames.py` (not built yet, A10) and `app/audio.py` `match` on the input
+  union and call `MediaTool`, `ImageReader` and `BlobStore`. Frames come in batches (default 32). Audio always ends in
+  one `audio_track()` call producing a 16 kHz mono `pcm_s16le` WAV. Segment lists and HLS playlists are fetched through
+  `BlobStore` and parsed by the pure `domain/manifests.py`, with count and byte limits. Not built yet: `acquire_audio`
+  handles one file and no audio, and answers segment lists and playlists with `unsupported_media` (item 1).
 - **A frame is raw RGB24 bytes plus its dimensions**, downscaled at decode to `max_side` (default 448): stdlib-only,
   emitted by ffmpeg, convertible to numpy or PIL without copying.
 - **Speech crosses ports as the one WAV track plus time spans.** Every VAD and language-ID decision (runs, ≤30 s cuts,
@@ -295,16 +320,17 @@ class ImageGuard(Protocol):  # item 3: guard VLM; P(yes) per policy, renormalise
 ```python
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Dependencies:
-    store: BlobStore
+    store: BlobStore  # job records and artifacts
+    inputs: BlobStore  # request inputs only; never sees the state or artifact roots (A6)
     media: MediaTool
     images: ImageReader
-    speech: Speech | None  # None ⇒ this deployment does not offer the stage
-    text: TextGenerator | None
-    moderator: ImageModerator | None
-    labeller: ZeroShotLabeller | None
-    guard: ImageGuard | None  # item 3
-    notifier: Notifier
+    speech: Speech | None = None  # None ⇒ this deployment does not offer the stage
+    text: TextGenerator | None = None
+    moderator: ImageModerator | None = None
+    labeller: ZeroShotLabeller | None = None
+    notifier: Notifier | None = None  # None until HTTP callbacks are built (A8)
     enabled_stages: frozenset[StageName]  # derived by bootstrap from the members above
+    # item 3 adds guard: ImageGuard | None (not built yet, A8)
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class Speech:  # the captions stage needs all three
@@ -313,7 +339,8 @@ class Speech:  # the captions stage needs all three
     recognizer: SpeechRecognizer
 ```
 
-`scenewise calibrate` gets `CalibrationDeps(store=…, images=…, labeller=…)` instead.
+`scenewise calibrate` gets `CalibrationDeps(store=…, images=…, labeller=…)` instead (item 4, not built yet).
+`bootstrap` builds every member as `None` except the stores, `media` and `images`, so `enabled_stages` is `{audio}`.
 
 Sources: q8a §4, §9.3; q8c §1, §2, §4.1–4.3, §7.1; q11 §2.3, §3.5; D2, U16.
 
@@ -324,7 +351,8 @@ Sources: q8a §4, §9.3; q8c §1, §2, §4.1–4.3, §7.1; q11 §2.3, §3.5; D2,
 Domain classes are `@dataclass(frozen=True, slots=True, kw_only=True)` with tuple collections. Constructors check
 invariants in `__post_init__` and raise plain `ValueError`, which the calling boundary translates
 ([§9](#9-errors-and-http-mapping)). Condensed, one line per type; the full definitions are q8a §5 as amended by
-q8c §1, §2, §4–§7 (q8a's text-only `TranscriptSegment(span, text, confidence)` is superseded):
+q8c §1, §2, §4–§7 (q8a's text-only `TranscriptSegment(span, text, confidence)` is superseded). Types commented "not
+built yet" are design only; the others exist in `domain/` with these fields:
 
 ```python
 # domain/media.py
@@ -337,14 +365,17 @@ type VisualSource = VideoFrames | TimedFrames | IntervalFrames | SpriteSheets
 
 # domain/jobs.py
 JobId = NewType("JobId", str)              # ^[A-Za-z0-9._:-]{1,200}$, not "." or ".."
-class StageName(StrEnum): CAPTIONS, SUMMARY, CHAPTERS, MODERATION, LABELS
+class StageName(StrEnum): AUDIO, CAPTIONS, SUMMARY, CHAPTERS, MODERATION, LABELS
+                           # AUDIO: the skeleton's one wired stage (A1)
 class SkipReason(StrEnum): NOT_REQUESTED, NO_AUDIO_STREAM, NO_SPEECH, LANGUAGE_UNSUPPORTED,
                            LANGUAGE_UNKNOWN, DEPENDENCY_FAILED, BELOW_MINIMUM
 StageOptions(language_hint, labels_taxonomy, labels_max, video_embedding, summary_max_chars,
-             chapters_min_duration, include_words)  # labels_*: None = the default (q8c §7.5)
+             chapters_min_duration, include_words)  # not built yet (A5);
+                                                    #   labels_*: None = the default (q8c §7.5)
 Callback(url, auth, key_id, audience)      # auth: "hmac" | "oidc"; url already allow-listed
-TextContext(title, description, tags);  JobSpec(stages, options)
-Job(id, spec, audio, visual, context, external_ref, callback, artifacts_prefix)
+TextContext(title, description, tags)      # not built yet (A5)
+JobSpec(stages)                            # gains options with StageOptions (A5)
+Job(id, spec, audio, visual, external_ref, callback, artifacts_prefix)  # gains context (A5)
 class JobState(StrEnum): RUNNING, SUCCEEDED, PARTIAL, FAILED
 JobRecord(job_id, state, attempt, lease_until, request_digest, error_code, result_uri,
           updated_at, scenewise_version, external_ref)  # schema_version is wire-only (JobRecordV1)
@@ -355,36 +386,42 @@ def decide_attempt(record: JobRecord | None, request_digest: str, info: AttemptI
 
 # domain/speech.py
 SpeechProbabilities(hop, values)           # Silero output, one value per 32 ms hop
-SpeechPolicy(threshold, …, merge_gap, decode_chunk, lid_chunk)  # 16 fields (q8c §2)
+SpeechPolicy(threshold, …, merge_gap, decode_chunk, lid_chunk)  # 16 fields (q8c §2);
+                                                                 #   not built yet (item 1)
 LanguageGuess(language, probability)       # Whisper code (BCP-47 primary subtag)
 LanguageReport(dominant, detected, partial)  # detected includes "und" for windows below
                                              #   lid_p_min; kept on a language skip
-LanguagePlan(stretches, skip, report)      # the language rule's output
+LanguagePlan(stretches, skip, report)      # the language rule's output; not built yet
 
 # domain/results.py
 Token(text, start, end_hint, log_prob);  RecognizedSegment(span, tokens)
-Word(text, span, log_prob);  TranscriptSegment(span, words)  # .text is derived
-Transcript(language, segments);  Cue(span, text)
+Word(text, span, log_prob);  TranscriptSegment(span, words)  # .text is derived; not built yet
+Transcript(language, segments);  Cue(span, text)  # not built yet
 Generation(text, model, refused);  Summary(text, model);  Chapter(start, title)
+                                           # Summary, Chapter: not built yet
 TextRequest(system, prompt, json_schema, max_tokens)  # gains images with item 3
 ModerationScore(category, score);  FrameModeration(timestamp, scores)
-ModerationReport(frames, flagged)
+ModerationReport(frames, flagged)          # not built yet
 StageOutcome(stage, outcome: Succeeded | Skipped | LanguageSkipped | Failed, seconds)
 Skipped(reason);  LanguageSkipped(reason, report)
-Failed(error_code, detail)                 # detail feeds ErrorInfo.message (D8)
-Analysis(job_id, media, outcomes, transcript, cues, summary, chapters, moderation, labels)
+Failed(error_code, category, detail)       # category "input" | "internal" (A3);
+                                           #   detail feeds ErrorInfo.message (D8)
+Analysis(job_id, media, outcomes, audio_wav)  # media may be None (A2); v1 adds transcript,
+                                              #   cues, summary, chapters, moderation, labels
 
 # domain/labels.py
 LabelScores(model_id, preprocess, cosines, score_transform, embeddings)
-Label(id, name, path, score_max, score_mean, frames, calibrated, external_id)
+Label(id, name, path, score_max, score_mean, frames, calibrated, external_id)  # not built yet
 ```
 
 - There is **no `Stage` class**. `domain/plan.py` holds the prerequisite table: captions need audio; summary and
   chapters need a transcript in v1; moderation and labels need visual input. A stage whose prerequisite failed is
-  `skipped` with `dependency_failed`.
+  `skipped` with `dependency_failed`. Not built yet: the runner reads only the run order (`plan.ordered`) and the
+  stages the deployment lacks (`plan.unavailable`); nothing reads `plan.PREREQUISITES` or constructs
+  `SkipReason.DEPENDENCY_FAILED`.
 - **Job state is derived**: `PARTIAL` if any requested stage failed, otherwise `SUCCEEDED`; a skip is not a failure.
   No speech gives captions `skipped` / `no_speech` and no VTT; too little English gives `language_unsupported` or
-  `language_unknown`, with the detected languages kept.
+  `language_unknown`, with the detected languages kept (captions are not built yet).
 - **Invalid outcomes are unrepresentable.** `Skipped.reason` and `LanguageSkipped.reason` take `Literal` subsets of
   `SkipReason`, so only a language skip carries a `LanguageReport`. `app/contract/mapping.py` derives the wire fields
   with an exhaustive `match`.
@@ -395,10 +432,10 @@ Label(id, name, path, score_max, score_mean, frames, calibrated, external_id)
 
 | Where | What | Why there |
 |---|---|---|
-| `app/contract/` | Versioned wire models (`schema_version: "1"`, unions on `kind`, inputs `extra="forbid"`), explicit `to_domain()` for requests and one `*_json()` per document (`record_to_json`, `status_json`, `result_json`, `rejection_json`, …) | The wire format evolves apart from the domain; every writer reaches it in `app`. |
+| `app/contract/` | Versioned wire models (`schema_version: "1"`, unions on `kind`, inputs `extra="forbid"`), explicit `to_domain()` for requests and one `*_json()` per document (`record_to_json`, `status_json`, `result_json`, `rejection_json`, …); the stored record is `JobRecordV1` in `records.py` | The wire format evolves apart from the domain; every writer reaches it in `app`. |
 | `app/contract/envelope.py` | Lenient `Envelope`: `schema_version`, `job_id`, `external_ref` (invalid → `None`) | Parsed first, so a record can be keyed when the rest is invalid. |
-| `app/contract/taxonomy.py` | TOML taxonomies (stdlib `tomllib`), the JSON calibration sidecar | Hand-edited files; no new dependency. |
-| `app/llm_output.py` | `TypeAdapter` parsing of LLM JSON | Its errors feed the repair prompt; cross-field rules stay in `domain`. |
+| `app/contract/taxonomy.py` (item 4, not built yet) | TOML taxonomies (stdlib `tomllib`), the JSON calibration sidecar | Hand-edited files; no new dependency. |
+| `app/llm_output.py` (not built yet) | `TypeAdapter` parsing of LLM JSON | Its errors feed the repair prompt; cross-field rules stay in `domain`. |
 | `service/config.py` | `Settings(BaseSettings)` | Environment loading, start-up validation. |
 
 `domain` never imports Pydantic; an import-linter allow-list enforces it.
@@ -413,6 +450,10 @@ Every stage **gets its inputs through ports, transforms with pure domain functio
 read a local file that a port has materialised for it (`audio` reads the track `MediaTool` extracted). Stage functions
 live in `app/stages.py`; `app/runner.py` composes them according to `domain/plan.py`.
 
+**Built so far:** only the `audio` stage (A1), which publishes the normalised WAV. The five stages in the table are
+designed and not built yet (roadmap items 1–4); no back end offers them, so a request for one fails the job with
+`stage_unavailable` ([§9](#9-errors-and-http-mapping)).
+
 | Stage | What runs (default) | Ports | Pure core | Findings |
 |---|---|---|---|---|
 | Captions | Silero VAD, a Whisper `tiny` (ONNX) language-ID gate, speech merged into ≤30 s segments, Parakeet-TDT-0.6b-v2 on sherpa-onnx, WebVTT cues. No speech → no VTT. Unknown-language windows are dropped and flagged; English is captioned from about 2 s of it. | `MediaTool`, `VoiceActivityDetector`, `LanguageIdentifier`, `SpeechRecognizer` | `speech.py`, `captions.py`, `time.py` | [q2][q2], [q11][q11], q8c §1–§2; D19–D21, D23, U16 |
@@ -420,8 +461,9 @@ live in `app/stages.py`; `app/runner.py` composes them according to `domain/plan
 | Moderation | Tier 1: a local classifier on every sampled frame, plus SigLIP 2 prompts for the categories it does not cover. A second opinion only: it can escalate, never clear. The whole stage is item 3; tier 2 adds a guard model on ambiguous frames. | `ImageModerator`, `ZeroShotLabeller`, `ImageGuard` | `moderation.py` | [q4][q4], q8c §7.2; U1 |
 | Labels | SigLIP 2 zero-shot over an adopter-supplied TOML taxonomy (`labels_taxonomy`; `labels_max` overrides its `top_k`); calibrated thresholds from `scenewise calibrate`. A label without a fitted threshold is emitted only above the per-video relative cut `z ≥ z_min` and carries `calibrated: false`. Keeping uncalibrated labels out of `contentTags` until one `calibrate` run is Expause's integration policy, not scenewise behaviour. | `ZeroShotLabeller` | `labels.py`, `calibration.py`, `sampling.py` | [q5][q5] §6.1, q8c §4.1, §7.5; U10 (Expause) |
 
-Failure handling is per stage: a failed stage marks the job `partial`, and dependent stages are `skipped`. Bad LLM JSON
-is retried once inside the stage with a repair prompt; GPU out-of-memory once at half the batch inside the adapter;
+Failure handling is per stage: a failed stage marks the job `partial`, and dependent stages are `skipped`. Only the
+first half is built: the runner does not skip dependent stages yet ([§5](#5-domain-types-and-where-pydantic-is-used)).
+The rest of this paragraph describes stages that are not built yet. Bad LLM JSON is retried once inside the stage with a repair prompt; GPU out-of-memory once at half the batch inside the adapter;
 neither retries the job. A refusal is checked before any JSON parse, so it never triggers the repair, and
 `FallbackTextGenerator` returns it unchanged: it falls through only on a `RetryableError` or an unavailable primary.
 
@@ -435,44 +477,55 @@ Sources: q8a §8; q8c §7.1; the stage findings in the table.
 Tasks is the queue and owns retries and backoff; nothing runs outside a request.
 
 **Storage.** No database. The job record is `{state_prefix}/{job_id}/status.json`, written only with
-compare-and-swap preconditions. Artifacts go to `{artifacts_prefix}/a{attempt}/` (`result.json`, `captions.vtt`),
-where `artifacts_prefix` is `delivery.artifacts.uri_prefix`, else `{state_prefix}/{job_id}`. The terminal record's
-`result_uri` names the winning attempt's files; callers never build paths.
+compare-and-swap preconditions. Artifacts go to `{artifacts_prefix}/a{attempt}/`: `result.json` plus each stage's
+file, which in the skeleton is the `audio` stage's `audio.wav` (A1; `captions.vtt` arrives with captions).
+`artifacts_prefix` is `{delivery.artifacts.uri_prefix}/{job_id}`, else `{state_prefix}/{job_id}`; the job id is always
+appended, and a `uri_prefix` whose job folder normalises to the state prefix, below it, or to a folder containing it
+(dot segments, repeated slashes, percent-escapes, `localhost`) is refused with `uri_not_allowed`, as is one with a
+query, a fragment or a relative path; the output store also fences the state directory against symlinks and other
+spellings (A6). The terminal record's `result_uri` names the winning attempt's files; callers never build paths.
 
 **One delivery** (`service/http/push.py`, then `app/delivery.handle_delivery`):
 
 1. **Envelope.** Reject a body over `max_body_bytes` with 413. Parse only `job_id`, `schema_version` and, leniently,
    `external_ref`; hash the canonical body into `request_digest`. No usable `job_id` → 422. From here on, every path
-   ends in a terminal record, a `job_id_conflict` rejection (200, no record), or a retryable 429/503.
+   ends in a terminal record, a `job_id_conflict` rejection (200, no record), any other non-retryable rejection outside
+   the run, such as an unreadable record (200, no record; review r1 finding 4), or a retryable 429/503.
 2. **Admission.** Bind the Cloud Tasks headers to the log context; a non-blocking capacity check answers 429 when full;
    register the job with the watchdog.
 3. **Decide.** Read the record and its generation `g0`; the pure `decide_attempt` returns `Start(n)`, `AlreadyDone`,
-   `InProgress`, `GiveUp` or `Conflict`.
+   `InProgress`, `GiveUp` or `Conflict`. With no record the skeleton goes straight to `Start(1)` without calling
+   `decide_attempt`, which would return the same (A9).
 4. **Claim with fencing.** Write `RUNNING{attempt=n, lease_until=now+lease}` with `if_generation=g0`. The returned
    generation is this attempt's **fencing token**. A `WriteConflictError` means another delivery won: 503.
 5. **Parse inside the claim.** A validation failure is an `InputError`: a terminal `FAILED` record and a 200.
 6. **Run and publish.** `run_job(job, deps, deadline=…)`, then write the artifacts under `a{n}/`.
 7. **Terminal record.** Write `SUCCEEDED` / `PARTIAL` / `FAILED` with `if_generation=<token>`. If it succeeds, whatever
-   the state, notify once (best-effort) and answer 200; `AlreadyDone` duplicates are not re-notified. A
-   `WriteConflictError` here means a later attempt took over after this lease expired: no notify, and these artifacts
-   are never referenced.
-8. **Give up.** `GiveUp` → write `FAILED("attempts_exhausted")` with `if_generation=g0`, notify, answer 200; on a
-   `WriteConflictError`, answer 503 and let the next delivery decide again.
+   the state, notify once (best-effort) and answer 200; `AlreadyDone` duplicates are not re-notified. The notify is not
+   built yet (A8). A `WriteConflictError` here means a later attempt took over after this lease expired: no notify,
+   and these artifacts are never referenced; the skeleton answers 503 `job_in_progress` (A9).
+8. **Give up.** `GiveUp` → write `FAILED("attempts_exhausted")` with `if_generation=g0`, notify (not built yet, A8),
+   answer 200; on a `WriteConflictError`, answer 503 and let the next delivery decide again.
 
 **Timing.** The lease is `dispatch_deadline_s + lease_margin_s` (1800 + 120 s), static, with no heartbeat; the attempt
 budget is 1500 s and `watchdog_grace_s` 120 s. `config.py` rejects settings unless budget + grace + probe window
-(period × failure threshold) < `dispatch_deadline_s`. Media whose estimated cost will not fit is rejected up front with
-`exceeds_push_budget`. The deadline is checked between stages, frame batches and speech-model calls, and ffmpeg gets
-`timeout = remaining`. The caller's queue must set `dispatchDeadline` ≤ `dispatch_deadline_s`, `maxAttempts: -1` and a
+(`probe_period_s` × `probe_failure_threshold`, 10 s × 3 by default) < `dispatch_deadline_s`; nothing else reads the two
+probe settings (A7). Media whose estimated cost will not fit is rejected up front with `exceeds_push_budget` (not built
+yet: the code is declared, nothing raises it). The deadline is checked between stages, frame batches and speech-model
+calls, and ffmpeg gets `timeout = remaining`. In the skeleton the deadline is checked between stages, ffmpeg's audio
+extraction and frame decoding get `timeout = remaining`, and `probe` has a fixed 60 s timeout (review r1 finding 14 in
+[skeleton-notes][notes]); frame batches and speech-model calls arrive with their stages. The caller's queue must set `dispatchDeadline` ≤ `dispatch_deadline_s`, `maxAttempts: -1` and a
 `maxRetryDuration` of about 12 h, so that scenewise's own attempt counter is authoritative.
 
 **Callbacks are best-effort**; the record (`GET /v1/jobs/{id}`) is the source of truth the caller reconciles against.
-A retry of a terminal job is a new `job_id`.
+Callbacks are not built yet: the wire accepts only `notify: none` and `bootstrap` leaves `Dependencies.notifier` as
+`None` (A5, A8). A retry of a terminal job is a new `job_id`.
 
 | Situation | `POST /v1/jobs` answer |
 |---|---|
 | Job terminal (succeeded, partial, or failed with a record), or a duplicate of one | **200** + job status |
 | Same `job_id`, different body | **200** + `job_id_conflict` rejection; no record written; logged at ERROR |
+| Unreadable record, or another non-retryable error outside the run | **200** + rejection (`outcome: rejected`, problem with its `code`); no record written (review r1 finding 4) |
 | No usable `job_id` | **422** (retried until `maxRetryDuration`; deliberate, since no record can be keyed) |
 | Body over 1 MiB (direct callers only) | **413** `request_too_large`; no record |
 | Admission full | **429** + `Retry-After` |
@@ -485,9 +538,10 @@ A retry of a terminal job is a new `job_id`.
 **Authentication.** On GCP the service is IAM-only and Cloud Tasks presents an OIDC token; scenewise has no push-path
 token code. Self-hosters put a reverse proxy in front (D13). The local job store is single-host (D14). **Long
 media** go to a Cloud Run job path (`scenewise run-job`), designed and deferred. `/readyz`, the start-up probe, reports
-model loading.
+model loading. That is not built yet, as no model back end exists: today `/readyz` answers 200 with the enabled stages
+once the lifespan has built every dependency.
 
-Sources: q8a §1.4, §6.1–6.5, §8; q1 §8.5–8.6; U6, D9, D13, D14.
+Sources: q8a §1.4, §6.1–6.5, §8; q1 §8.5–8.6; U6, D9, D13, D14; A1, A5–A9.
 
 ---
 
@@ -499,7 +553,7 @@ Only the HTTP edge is async; everything below `service/http` is synchronous.
   `anyio.CapacityLimiter(max_jobs).acquire_nowait()` answers 429 when self-hosted or if Cloud Run over-routes.
 - **One worker thread per job**, through `anyio.to_thread.run_sync`; nothing in `app` touches anyio.
 - **Model locks around inference only**, never around ffmpeg, storage, hosted calls or the whole job. Vision models on
-  one GPU share one lock; on CPU each model has its own.
+  one GPU share one lock; on CPU each model has its own. Not built yet: no model adapter exists.
 - **The GIL.** onnxruntime and CTranslate2 release it during inference; whether torch/open_clip does is unverified.
 - **Liveness watchdog.** `/healthz` returns 503 when a job thread outlives budget + grace, so the Cloud Run probe kills
   the instance before the lease expires. Fencing keeps correctness where there is no probe.
@@ -538,9 +592,10 @@ class ConfigurationError(ScenewiseError)  # start-up only; the process exits non
 ```
 
 - **Domain `ValueError`s** become `InputError(code="invalid_request")` in `mapping.to_domain`,
-  `InternalError(code="model_output_invalid")` in LLM and model parsing, and
+  `InternalError(code="model_output_invalid")` in LLM and model parsing (not built yet), and
   `InternalError(code="invariant_violation")` anywhere else in the runner.
-- **Inside a stage**, input and internal errors fail that stage only. A `RetryableError` fails the attempt: the record
+- **Inside a stage**, input and internal errors fail that stage only, and so does any other exception, as
+  `unexpected`. A `RetryableError` fails the attempt: the record
   is released (`RUNNING{attempt=n, lease_until=now}` with `if_generation=<token>`, which `GET` reports as
   `retry_wait`) and the answer is 503, until `max_attempts`, then `FAILED("attempts_exhausted")`.
 - **Before the stages** (parse, fetch, probe, acquisition), any error fails the whole job. Any non-scenewise exception
@@ -562,23 +617,25 @@ Sources: q8a §6.2, §8; q8c §6.3 item 20, §7.1; D7, A12.
 ## 10. Configuration and logging
 
 **Configuration.** pydantic-settings with `env_prefix="SCENEWISE_"`, `env_nested_delimiter="__"` and `SecretStr` for
-secrets. Groups:
+secrets (no setting holds a secret yet, so no `SecretStr` field exists). Groups; only `media`, `inputs`, `service` and
+`log` are built, and the others arrive with their back ends (A7):
 
-- `media` (`ffmpeg` / `ffprobe` paths, minimum version);
-- `asr` (`backend`: `sherpa-onnx` | `onnx-asr` | `faster-whisper` | `none`; no device in v1);
-- `captions` (the `SpeechPolicy` fields);
+- `media` (`ffmpeg` / `ffprobe` paths, minimum major version `min_major`, 6 by default);
+- `asr` (`backend`: `sherpa-onnx` | `onnx-asr` | `faster-whisper` | `none`; no device in v1) — not built yet;
+- `captions` (the `SpeechPolicy` fields) — not built yet;
 - `llm` (`backend`: `anthropic` | `openai-compat` | `none`; for Anthropic, the provider, first-party or Vertex AI, and
-  the region; the thresholds `summary_min_words`, `chapters_min_seconds`, `chapters_min_count`);
-- `vision`; `labels` (`taxonomy_path`, `z_min`); `storage`;
-- `inputs` (URI allow-lists, `local_roots`, segment and byte limits);
-- `delivery` (allowed callback URLs, HMAC keys, `artifacts.uri_prefix`);
+  the region; the thresholds `summary_min_words`, `chapters_min_seconds`, `chapters_min_count`) — not built yet;
+- `vision`; `labels` (`taxonomy_path`, `z_min`); `storage` — not built yet;
+- `inputs` (`local_roots`; the URI allow-lists and segment and byte limits are not built yet);
+- `delivery` (allowed callback URLs, HMAC keys, `artifacts.uri_prefix`) — not built yet;
 - `service` (`max_jobs`, `max_body_bytes`, `attempt_budget_s`, `watchdog_grace_s`, `dispatch_deadline_s`,
-  `lease_margin_s`, `max_attempts`, `state_prefix`, `required_stages`);
-- `log`.
+  `lease_margin_s`, `probe_period_s`, `probe_failure_threshold`, `max_attempts`, `state_prefix`, `artifact_roots`,
+  `required_stages`); the two probe settings are read only by the timing check ([§7](#7-job-lifecycle));
+- `log` (`level`; `format`: `json` | `console`).
 
 `Settings()` is built once in the entry point and passed to `bootstrap`; adapters never see it.
 
-**Taxonomies** are read by `bootstrap` at start-up from `labels.taxonomy_path`, parsed with `app/contract/taxonomy.py`
+**Taxonomies** (item 4, not built yet) are read by `bootstrap` at start-up from `labels.taxonomy_path`, parsed with `app/contract/taxonomy.py`
 and passed to the labels use case keyed by id (`app` does no file I/O); a malformed one is a `ConfigurationError`.
 
 **URI policy.** `gs://` only for allow-listed buckets, `https://` only for allow-listed hosts, with no redirects and no
@@ -586,13 +643,20 @@ private, loopback or link-local addresses; `file://` (CLI and HTTP) only below `
 state prefix or an artifact root; the CLI adds the given file's directory. Inputs and outputs use separate stores:
 `Dependencies.inputs` reads inputs, and `Dependencies.store` writes only below the state prefix and
 `service.artifact_roots`.
-`storage/by_scheme.py` enforces this on every access, including URIs inside segment lists and playlists.
+`storage/by_scheme.py` enforces this on every access, including URIs inside segment lists and playlists. Not built
+yet: neither `gs://` nor `https://` has a store, and `by_scheme.py` and the GCS store are design only. The skeleton's
+only store is `file://`; each `LocalBlobStore` enforces its own roots, excluded roots and fenced roots (a fenced root
+is reachable only through its own spelling; the output store fences the state directory), and a state prefix of any
+other scheme fails start-up with `store_unavailable` (A6).
 
-**Logging.** structlog with the stdlib `ProcessorFormatter`, so library logs are JSON too. `runner.py` binds `job_id`,
-`stage`, `attempt` and `backend` through `contextvars`; `push.py` binds the Cloud Tasks task name and the Cloud Run
-trace field. **Logs never contain transcript text or signed URIs, and a test enforces it.**
+**Logging.** structlog with the stdlib `ProcessorFormatter`, so library logs are JSON too. Through `contextvars`,
+`runner.py` binds `job_id` and `stage`, and `delivery.py` binds `job_id` and, around each attempt, `attempt`
+(`_attempt`). `backend` is to be bound with the model back ends; nothing binds it yet. `push.py` binds the Cloud Tasks
+task name (`task_name`), its retry count (`transport_retry`) and the Cloud Run trace field (`trace`). **Logs never
+contain transcript text or signed URIs.** A test is to enforce it; it is not written yet (A14), and only a unit test
+of the validation summary checks that input values stay out of error details.
 
-Sources: q8a §7.1–7.2, §9.1; q8c §3, §6.4 item 25.3, §7.4–7.5; q1 §4.0; U5, U7, D8, A6, A7.
+Sources: q8a §7.1–7.2, §9.1; q8c §3, §6.4 item 25.3, §7.4–7.5; q1 §4.0; U5, U7, D8, A6, A7, A14.
 
 ---
 
@@ -612,9 +676,11 @@ ffmpeg is a system dependency, called through `subprocess`:
 - **Always an argv list** and a timeout; ruff bans `subprocess.call`. Exit codes plus the stderr tail map to
   `InputError(code="corrupt_media")` or `InternalError`.
 - **Checked at start-up.** `bootstrap` finds `ffmpeg` and `ffprobe`, checks a minimum major version and raises
-  `ConfigurationError` with an install hint. `SCENEWISE_MEDIA__FFMPEG` overrides the path. Declared in the README and
-  the Dockerfile; no `[external]` table while PEP 725 is a Draft.
-- **Output.** Frames as `rawvideo rgb24` on stdout; audio as one WAV, read with stdlib `wave`.
+  `ConfigurationError` with an install hint. `SCENEWISE_MEDIA__FFMPEG` and `SCENEWISE_MEDIA__FFPROBE` override the
+  paths, and `media.min_major` (6 by default, A7) is the minimum. Declared in the README and the Dockerfile (not
+  created yet, A13); no `[external]` table while PEP 725 is a Draft.
+- **Output.** Frames as `rawvideo rgb24` on stdout; audio as one WAV, read with stdlib `wave` by the ASR span reader
+  (not built yet; the skeleton's `audio` stage publishes the WAV bytes as they are).
 
 Sources: q8a §9.1–9.2; q8c §1, §3; q10; U17.
 
@@ -627,8 +693,8 @@ needed, D3). Everything else is an extra; version floors are in q8c §3, and `uv
 
 | Extra | Contents | Notes |
 |---|---|---|
-| `service` | FastAPI, uvicorn | The HTTP service. |
-| `asr` | sherpa-onnx, onnx-asr, onnxruntime, numpy | CPU-only, for captions: both Parakeet runtimes (D20), Silero and Whisper-tiny LID on onnxruntime (q11). No PyAV. |
+| `service` | FastAPI, uvicorn, anyio | The HTTP service; anyio for admission and worker threads (G8). |
+| `asr` | sherpa-onnx, sherpa-onnx-core (G4), onnx-asr, onnxruntime, numpy | CPU-only, for captions: both Parakeet runtimes (D20), Silero and Whisper-tiny LID on onnxruntime (q11). No PyAV. |
 | `asr-whisper` | faster-whisper | Opt-in fallback recogniser (U4, U16). Brings PyAV, whose wheels bundle GPL x264/x265 (q10); not in published images. |
 | `llm-anthropic` | `anthropic[vertex]` | One adapter for first-party and Vertex AI (U5). |
 | `vision` | open-clip-torch, timm | torch comes from a `torch-*` selector. |
@@ -639,13 +705,15 @@ needed, D3). Everything else is an extra; version floors are in q8c §3, and `uv
   `onnxruntime` that Silero, LID and faster-whisper need. `scripts/check_lock.sh` asserts the routing from `uv.lock`,
   and that `av`, `ctranslate2` and `faster-whisper` appear in neither image's extra set, only via `asr-whisper`.
 - **cu130 is the GPU target**, the CUDA major shared by torch and the Cloud Run driver. `bootstrap` checks
-  `torch.version.cuda`, so a `torch-cpu` install configured with `device=cuda` fails at start-up. GPU ASR is out of v1.
+  `torch.version.cuda`, so a `torch-cpu` install configured with `device=cuda` fails at start-up (not built yet; the
+  probe arrives with the vision adapters, G12). GPU ASR is out of v1.
 - **pip users** do not get `tool.uv` routing; the README tells them which PyTorch index to pass.
 - **Images.** `-cpu` (`service`, `asr`, `llm-anthropic`, `vision`, `gcs`, `torch-cpu`) and `-cuda` (the same with
   `torch-cu130`; only vision uses the GPU) share one Dockerfile and one weights layer, baked in from a
   scenewise-controlled mirror and checked by sha256; nothing downloads at run time. Published images ship no fallback
   recogniser, so `asr.backend = "faster-whisper"` fails at bootstrap there with an error naming `asr-whisper`;
-  self-builders add it with a build argument and take on q10 §3. ffmpeg in published images: U17, open (§11).
+  self-builders add it with a build argument and take on q10 §3. ffmpeg in published images: U17, open (§11). No image
+  is built yet: the Dockerfile comes with the Cloud Run benchmark (A13).
 - Local LLMs run out of process behind the OpenAI-compatible adapter; no in-process llama-cpp-python.
 
 Sources: q8a §9.4–9.5; q8c §3, §8; q7 §2.5; q2 §5.2; q10; q11 §4; U16.
@@ -655,12 +723,12 @@ Sources: q8a §9.4–9.5; q8c §3, §8; q7 §2.5; q2 §5.2; q10; q11 §4; U16.
 ## 13. How the design principles apply
 
 q8a §3 maps each SOLID principle to the code; most of it is visible in §2–§4. Three rules are not stated elsewhere.
-**Liskov:** every implementation of a port passes the same contract suite, and `acquire_frames` / `acquire_audio` yield
-the same shape whatever the source. **Open/closed:** a new back end is a new module plus one `case` in `bootstrap`; a
+**Liskov:** every implementation of a port passes the same contract suite, and `acquire_frames` (not built yet) /
+`acquire_audio` yield the same shape whatever the source. **Open/closed:** a new back end is a new module plus one `case` in `bootstrap`; a
 new input kind is a new dataclass in its union, and mypy's exhaustive-`match` check lists every place that must handle
 it. **Functional core:** an adapter loads, runs and returns raw output; interpretation is in `domain`.
 
-A stage, as the style reference:
+A stage, as the style reference (design: the chapters stage and `app/llm_output.py` are not built yet):
 
 ```python
 # app/stages.py
@@ -695,7 +763,8 @@ Captions has the same shape at greater length: VAD → pure runs and cuts → LI
 merge → recogniser in chunks → pure words and transcript.
 
 **Ownership on the delivery path:** `app/publish.py` writes artifacts only; `app/delivery.py` owns every job-record
-write and the notify call; the CLI's `analyse` mode calls `run_job` and prints, without publishing.
+write and the notify call (not built yet, A8); the CLI's `analyse` mode calls `run_job`, writes the audio track to its
+`--out` directory itself, prints the result document and keeps no job record, without calling `publish`.
 
 Sources: q8a §3, §3.1; q8c §2, §7.1; U11, A12.
 
@@ -753,6 +822,12 @@ randomised order.
   `models` job.
 - **No skips in CI.** A step after the all-tiers run in `test`, and after the model run, fails on any skipped or
   xfailed test in the JUnit XML; the `model` marker is allowed only under `tests/contract`.
+- **Built so far.** The unit, contract and end-to-end tiers exist. Contract suites cover the three implemented ports
+  (`BlobStore`, `MediaTool`, `ImageReader`), each against its fake and its real adapter; the end-to-end tier covers
+  the CLI, HTTP, bootstrap and input/output isolation. Hypothesis covers the request digest, job ids, the lease
+  boundary and time values. Not built yet: the model tier (no model tests and no `tests/models.lock`, A13, G16), and
+  the tests of `manifests`, `uris`, the speech rules, the word-end rule (with `captions`) and the GCS, `Notifier`,
+  faster-whisper and LID contracts, which arrive with their modules.
 
 Sources: q8b §6, §13; q8c §1–§2, §7.6–7.7; D4, D8.
 
@@ -766,7 +841,7 @@ plus `test` on 3.12, 3.13 and 3.14); `extended.yml` jobs are not merge gates.
 
 | Gate | Tool | What it enforces | Threshold |
 |---|---|---|---|
-| Types | mypy 2.4 `--strict` + `warn_unreachable`, 10 extra error codes, Pydantic plugin | `src`, `tests`, `scripts`; `disallow_any_explicit` in `domain`, `app`, `ports`; `ignore_missing_imports` for seven untyped heavy libraries only | 0 errors |
+| Types | mypy 2.4 `--strict` + `warn_unreachable`, 10 extra error codes, Pydantic plugin | `src`, `tests`, `scripts`; `disallow_any_explicit` in `domain`, `app`, `ports`; `ignore_missing_imports` for seven untyped heavy libraries only (added with their adapters; none yet, G11) | 0 errors |
 | Format | ruff 0.16.10 `format --check` | `line-length = 88` (U11); exact `required-version` pins for ruff and uv | no diff |
 | Lint | ruff `select = ["ALL"]`, six justified ignores, no preview | Every stable rule; `ban-relative-imports = "all"` | 0 findings |
 | Complexity | ruff C901, PLR0911/0912/0913/0915/0917 | Small functions with few parameters | complexity ≤ 8; returns ≤ 6; branches ≤ 10; arguments ≤ 5; positional ≤ 3 (src); statements ≤ 40 |
@@ -775,13 +850,13 @@ plus `test` on 3.12, 3.13 and 3.14); `extended.yml` jobs are not merge gates.
 | Adapter independence | import-linter `independence` | Adapter kinds do not import each other | kept |
 | Composition root | import-linter `protected` | Only `service.bootstrap` imports `scenewise.adapters` | kept |
 | Third-party allow-lists | custom contract | `domain`, `ports`: stdlib. `app`: + `pydantic`, `pydantic_core`, `structlog` | kept |
-| Driving side | import-linter `forbidden` | `service` imports no ML or cloud SDK, except bootstrap's torch probe | kept |
+| Driving side | import-linter `forbidden` | `service` imports no ML or cloud SDK, except bootstrap's torch probe (not built yet; its ignore entry arrives with it, G12) | kept |
 | Module size | `check_module_size.py` | Lines per module in `src`, `tests`, `scripts` | ≤ 500 |
 | Core coverage | coverage 7.16 from `tests/unit`, branch on | `domain`, `app`, `ports` | 100% |
-| Overall coverage | unit + contract + e2e | Whole package; heavy-extra adapters omitted, reported in the models job (D4) | ≥ 90% |
+| Overall coverage | unit + contract + e2e | Whole package; heavy-extra adapters omitted, reported in the models job (D4); none exists yet, so `omit` is empty (G10) | ≥ 90% |
 | Suppressions | `check_suppressions.py`, ruff RUF100/PGH003/PGH004, mypy `warn_unused_ignores` | No file-level directives or coverage pragmas; no line-level suppressions in `domain`, `app`, `ports`; elsewhere each needs `# why:` | count == committed budget |
-| Stray config | file-name check | No other config file can override the gates | none present |
-| Skips, markers | JUnit XML check; `pytest -m model --collect-only` | Nothing skipped or xfailed in CI; `model` only under `tests/contract` | 0 |
+| Stray config | `check_stray_config.py` (G14) | No other config file can override the gates | none present |
+| Skips, markers | `check_junit.py` over the JUnit XML (G15); `pytest -m model --collect-only` | Nothing skipped or xfailed in CI; `model` only under `tests/contract` | 0 |
 | Lock | `uv lock --check`, `UV_LOCKED=1`; `check_lock.sh` | Lock matches `pyproject.toml`; torch routed per selector; no torch or `onnxruntime-gpu` in `service + asr` | pass |
 | Hygiene | deptry 0.25; vulture 2.16; typos 1.51 | Declared = imported; no dead code; spelling | 0 findings |
 | Workflow security | zizmor 1.30 offline (online nightly) | Workflow and pin hygiene | 0 findings |
@@ -846,4 +921,5 @@ The full list is in [`open-decisions.md`][od].
 [q11]: docs/research/q11-asr-without-pyav.md
 [ud]: docs/research/user-decisions.md
 [od]: docs/research/open-decisions.md
+[notes]: docs/skeleton-notes.md
 [roadmap]: ROADMAP.md
