@@ -11,34 +11,40 @@
 #
 # WHY A WRAPPER EXISTS AT ALL. Same reason as its siblings: an invocation of a
 # script path under the configured scripts directory is allow-listed literally in
-# three forms by the generated permission profile (this file's row in
+# two forms by the generated permission profile, plus the run copy's exact path
+# in the run watcher's per-run copy (this file's row in
 # `cli/src/generators/outerLoopScripts.ts` carries `agentInvocable: true`) and is
 # auto-allowed by the script-allowlist guard — a script under that directory
 # whose basename is not on the guard's deny list, in a command carrying none of
 # `$(…)`, a backtick, `|`, `<`, a braced form other than a bare `${IDENT}`, or a
 # `>` that is neither a descriptor duplication (`2>&1`, `>&2`, `2>&-`) nor a
 # redirection to the literal `/dev/null`. A bare `python3 …` command line is
-# matched statically by neither and draws a prompt an unattended run cannot
-# answer. This basename is deliberately NOT on that deny list, and its absence
+# matched statically by neither and is refused in an unattended run. This
+# basename is deliberately NOT on that deny list, and its absence
 # there is the decision that makes the guard route cover this script from the
 # first run, whether or not the profile has been regenerated.
 #
 # WHAT THIS DOES NOT CONTAIN. The first argument is a path and every remaining
 # argument is forwarded to the file, so nothing here takes an inline program — no
 # `-c`, no `-e`, no `bash -c`. That fence is over WHICH FILE RUNS and over nothing
-# the file does. A probe is a program the agent composed one tool call earlier and
-# it runs with the session's own privileges, so everything the generated profile's
-# `deny` floor and its `ask` list, and the script-allowlist guard's
-# `DENY_SCRIPT_BASENAMES`, withhold from a COMMAND STRING is reachable from inside
-# one — directly, or one `subprocess` / `child_process` call further on. Do not
-# read the file/string distinction as a capability boundary: it costs an extra
-# tool call. The layer that still holds is the `pre-push` git hook, because git
-# runs it however git was invoked, subprocess included — the ranking
-# `plugin/docs/AUTONOMOUS_FLOW_WHITEBOARD.md`'s protected-branch bullet states.
-# The two mitigations that do apply are narrower than containment and are named as
-# what they are: `<state_dir>/scratch/` is gitignored by its contents, so nothing
-# run from here reaches a commit, and the agent instructions require a MUTATION
-# CHECK to be reverted before the task's own verification runs.
+# the file does. Under the unattended profile the file runs as a Bash process
+# inside Claude Code's sandbox, so it is held to the sandbox's write roots,
+# network allowlist and credential denies: a write outside the roots from a
+# probe was refused (`docs/sandbox-record.md` §4, the `scratch` leg, SR2).
+# Inside those it still reaches everything the generated profile's `deny` floor
+# and its `ask` list, and the script-allowlist guard's `DENY_SCRIPT_BASENAMES`,
+# withhold from a COMMAND STRING — directly, or one `subprocess` /
+# `child_process` call further on. Do not read the file/string distinction as a
+# capability boundary: it costs an extra tool call. With `sandbox.optOut` taken
+# the sandbox holds nothing. The layer that holds for a push git performs is the
+# `pre-push` git hook, because git runs it however git was invoked, subprocess
+# included — the ranking `plugin/docs/AUTONOMOUS_FLOW_WHITEBOARD.md`'s
+# protected-branch bullet states. The two mitigations that do apply are narrower
+# than containment and are named as what they are: `<state_dir>/scratch/` is
+# gitignored by its contents, so nothing run from here reaches a commit, and the
+# agent instructions require a MUTATION CHECK to be reverted before the task's
+# own verification runs. What the sandbox contains, leaves outside and was
+# measured to hold is `docs/sandbox-record.md` §1; its residuals, §6.
 #
 # THE REFUSAL IS THE WHOLE OF THE SAFETY — over WHICH FILE, and over nothing
 # else, per the paragraph above. This script executes what it is given, so the
@@ -101,7 +107,7 @@
 # IT IS DELIBERATELY NOT A WRAPPER. It carries no adopter command line — it is
 # not a `WRAPPER_SCRIPTS` row, answers to no `commands.*` key, and has no
 # `{{command}}` for `init` to inline. Like every outer-loop script it ships fixed
-# and reads `harness.config.json` at run time.
+# and reads `devscene.config.json` at run time.
 #
 # IT PRINTS NOTHING OF ITS OWN ON THE RUN PATH. The file's stdout and stderr are
 # the answer, and a caller reading a probe's output must not have to filter a
@@ -126,30 +132,30 @@
 #   66   the extension has no interpreter in the table below
 #   67   the file is not there, or is not a readable regular file
 #   68   the run-time context could not be established — the shared library is
-#        unreadable, this is not a git repository, `harness.config.json` could
+#        unreadable, this is not a git repository, `devscene.config.json` could
 #        not be resolved, or the scratch directory has never been materialized
 #   69   the interpreter the extension names is not on PATH
 #
 # REPRO — reproduce any decision by hand, against a throwaway fixture:
 #
 #   d=$(mktemp -d); git -C "$d" init -q -b feat_x
-#   printf '%s' '{"version":1,"defaultBranch":"main","stateDir":"sdlc-harness/","layers":[],"commands":{}}' > "$d/harness.config.json"
-#   mkdir -p "$d/sdlc-harness/scratch"
-#   printf 'import sys\nprint("ok", sys.argv[1:])\n' > "$d/sdlc-harness/scratch/probe.py"
+#   printf '%s' '{"version":1,"defaultBranch":"main","stateDir":"devscene/","layers":[],"commands":{}}' > "$d/devscene.config.json"
+#   mkdir -p "$d/devscene/scratch"
+#   printf 'import sys\nprint("ok", sys.argv[1:])\n' > "$d/devscene/scratch/probe.py"
 #   cp -R <scripts_dir>/. "$d/scripts/"   # this file and its lib/
 #
-#   the probe       (cd "$d" && scripts/scratch-run.sh sdlc-harness/scratch/probe.py a b)
+#   the probe       (cd "$d" && scripts/scratch-run.sh devscene/scratch/probe.py a b)
 #                   -> prints `ok ['a', 'b']`, exit 0
 #   its own status  a probe ending `sys.exit(7)`                        -> exit 7
-#   absolute form   scripts/scratch-run.sh "$d/sdlc-harness/scratch/probe.py"  -> runs
-#   outside         scripts/scratch-run.sh harness.config.json          -> exit 65
-#   traversal       scripts/scratch-run.sh sdlc-harness/scratch/../../harness.config.json
+#   absolute form   scripts/scratch-run.sh "$d/devscene/scratch/probe.py"  -> runs
+#   outside         scripts/scratch-run.sh devscene.config.json          -> exit 65
+#   traversal       scripts/scratch-run.sh devscene/scratch/../../devscene.config.json
 #                                                                       -> exit 65
-#   itself          scripts/scratch-run.sh sdlc-harness/scratch/.       -> exit 65
+#   itself          scripts/scratch-run.sh devscene/scratch/.       -> exit 65
 #   unknown ext     mv probe.py probe.pl; same call                     -> exit 66
 #   shell probe     mv probe.py probe.sh; same call                     -> exit 66
-#   absent file     scripts/scratch-run.sh sdlc-harness/scratch/nope.py -> exit 67
-#   unresolvable    printf 'x' > "$d/harness.config.json"; same call    -> exit 68
+#   absent file     scripts/scratch-run.sh devscene/scratch/nope.py -> exit 67
+#   unresolvable    printf 'x' > "$d/devscene.config.json"; same call    -> exit 68
 
 # Deliberately no `-e`: every refusal below is an explicit `exit`, and an
 # implicit one would skip the message that says what was refused and why.
@@ -191,11 +197,12 @@ fi
 requested="$1"
 
 # The repository is THIS FILE's own checkout, never the caller's directory: the
-# three forms the permission profile emits include a sibling worktree's own copy,
+# forms the permission profiles allow-list include a run copy's own copy,
 # and each copy must answer for the checkout it belongs to whatever directory the
-# caller stood in.
+# caller stood in. It is placed by `hr_script_root` (F15) because inside a
+# sandbox `<scriptsDir>/.git` is a placeholder git's discovery dies on.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(hr_repo_root "$script_dir")"
+repo_root="$(hr_script_root "$script_dir")"
 if [ -z "$repo_root" ]; then
   echo "scratch-run.sh: '$script_dir' is not inside a git repository — refusing to run anything" >&2
   exit 68
@@ -232,7 +239,7 @@ case "$HR_SCRATCH_WHY" in
     exit 67
     ;;
   no-config)
-    echo "scratch-run.sh: cannot resolve '$repo_root/harness.config.json' — refusing to run anything" >&2
+    echo "scratch-run.sh: cannot resolve '$repo_root/devscene.config.json' — refusing to run anything" >&2
     echo "  (no configuration there, invalid JSON, more than one document, no defaultBranch, or jq missing/older than 1.5)" >&2
     exit 68
     ;;
