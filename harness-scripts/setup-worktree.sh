@@ -1,11 +1,43 @@
 #!/usr/bin/env bash
-# setup-worktree.sh — bootstrap the checkout this script sits in, so a run can
-# start in it: link the machine-local files a fresh working copy cannot carry in
-# git, install the committed pre-push backstop for THIS working copy, install
-# dependencies and build.
+# setup-worktree.sh — bootstrap the checkout this script sits in, or with
+# `--target <dir>` the working copy at <dir>, so a run can start in it: link the
+# machine-local files a fresh working copy cannot carry in git, install the
+# committed pre-push backstop for THAT working copy, install dependencies and
+# build.
 #
-# WHO RUNS IT. create-worktree.sh, immediately after it adds a working copy —
-# and a person, by hand, on a checkout that predates a configuration change.
+# WHO RUNS IT. create-worktree.sh, immediately after it creates a run's clone,
+# in every bootstrapped mode: it runs the MAIN checkout's script with `--target
+# <clone>`. The GitHub job's `Bootstrap the checkout` runs it with no argument;
+# and a person runs it by hand on a checkout that predates a configuration
+# change.
+#
+# `--target <dir>` is for a copy whose tree a run wrote. It refuses unless this
+# script's own checkout is a main checkout (`hr_wrapper_main_of` places it as
+# itself) and <dir> passes `hr_run_target_check_var` against it. A linked
+# worktree as <dir> is refused, because a run copy is a clone; a checkout a
+# person made with `git worktree add` is bootstrapped by running its own
+# scripts directory's copy of this script with no argument. It then
+# reads EVERY configured value — `appDir`, `qa.credentialsPath`, `githooksDir`,
+# `commands.depInstall`, `commands.build` — from the main checkout's
+# `devscene.config.json`, runs each step in <dir>, and writes the main
+# checkout's `githooksDir` under <dir> as the copy's `core.hooksPath`.
+#
+# A registered clone as <dir> takes that `core.hooksPath` in its own
+# `.git/config`, at the value the library's clone allow-list admits
+# (`hr_clone_config_spec`), and nothing is written to the main checkout's
+# configuration. Its caller is create-worktree.sh.
+#
+# THE RESIDUAL `--target` DOES NOT CLOSE. The main checkout's
+# `commands.depInstall` and `commands.build` still run in the copy, against the
+# copy's own `package.json`: an install runs the manifest's lifecycle scripts,
+# and a build such as `npm run build` runs its `scripts.build` / `prebuild` /
+# `postbuild`. Both start npm in the copy, so a run-written project `.npmrc` or
+# `node_modules/` still applies. `package.json` is not in `copySurfacePaths`, so
+# create-worktree.sh's surface check does not see a changed script entry. This
+# is code execution by nature and runs unsandboxed: a package manager runs the
+# manifest's lifecycle and script entries by nature, and no out-of-session
+# sandbox runtime ships to run them in.
+#
 # Every step is idempotent, so re-running it is the supported repair. It is not
 # meant to be run by a dispatched agent: it is not agent-invocable, it has no
 # entry in the generated permission profile, and it should not get one — it
@@ -24,12 +56,13 @@
 #
 #   1. Version manager. A stack that pins its toolchain through a version
 #      manager needs that manager's init file sourced before anything installs.
-#      Point `HARNESS_VERSION_MANAGER_INIT` at that file (in the watcher's
+#      Point `DEVSCENE_VERSION_MANAGER_INIT` at that file (in the watcher's
 #      environment, or in the operator's shell profile) and it is sourced here.
 #      Unset, or naming a file that is not readable, is a SILENT no-op: most
 #      projects have no such file and a note about it every run is noise.
 #   2. The machine-local client env file. When the MAIN checkout has
-#      `<appDir>/.env` and this checkout has none, it is SYMLINKED — one file,
+#      `<appDir>/.env` and the checkout being bootstrapped has none, it is
+#      SYMLINKED — one file,
 #      one place, and gitignored on both sides by the managed `.gitignore`
 #      block's `<appDir>/.env` rule, which is what leaves a freshly bootstrapped
 #      working copy showing nothing at all in `git status --porcelain`. There is
@@ -43,11 +76,15 @@
 #      main checkout by the same rule. NEVER copied: the file is sensitive and
 #      gitignored, and a symlink keeps the secret in one place and keeps the
 #      working copy clean. No key configured means nothing is attempted.
-#   4. The pre-push backstop at `githooksDir`, installed for this working copy
-#      alone (see the note at the step itself). A missing hook file is a skip
-#      with one line, so a checkout that predates the hook still bootstraps.
-#   5. `commands.depInstall`, then `commands.build`, each run from the
-#      repository root. An UNSET key is skipped with one printed line rather
+#   4. The pre-push backstop at `githooksDir`, installed for the bootstrapped
+#      working copy alone (see the note at the step itself). A missing hook
+#      file is a skip with one line, so a checkout that predates the hook still
+#      bootstraps. First, hook file or not, it removes from each live
+#      `config.worktree` (not a clone's) only `core.sparseCheckout`,
+#      `core.sparseCheckoutCone` and `index.sparse`, each only when set once to
+#      `false` (`hr_worktree_config_drop_inert_sparse_var`).
+#   5. `commands.depInstall`, then `commands.build`, each run from the root of
+#      the bootstrapped checkout. An UNSET key is skipped with one printed line rather
 #      than being an error — a project with no build step is ordinary. A build
 #      is skipped when the dependency install failed, because a build on a
 #      failed install only produces a second, less clear failure.
@@ -62,41 +99,50 @@
 # WHY NO `set -e`, AND WHY ITS CALLER HAS ONE. Each step's outcome is decided
 # here — skip, warn, or fail — and `-e` would turn the ordinary "this key is not
 # configured" into an abort. Failures are accumulated instead and reported in
-# the exit status, which is what create-worktree.sh's `set -e` then acts on: a
-# working copy whose dependencies did not install is not pushed as if it had.
+# the exit status, which create-worktree.sh acts on: a working copy whose
+# dependencies did not install is removed with its branch, never pushed.
 #
 # FAIL CLOSED ON A CONFIGURATION IT CANNOT READ. Every path and command below is
 # configured, and none has a remembered fallback, so an absent or unreadable
-# `harness.config.json` is a refusal that changes nothing — not a bootstrap that
+# `devscene.config.json` is a refusal that changes nothing — not a bootstrap that
 # guesses where the hooks are.
 #
-# Usage: setup-worktree.sh
-#   No arguments. The checkout is this script's own location, not $PWD, because
-#   the caller runs it from wherever it happens to be.
+# Usage: setup-worktree.sh [--target <dir>]
+#   No arguments: the checkout is this script's own location, not $PWD, because
+#   the caller runs it from wherever it happens to be. `--target <dir>`: the
+#   registered clone at <dir>, configured from this script's main checkout; a
+#   linked worktree as <dir> is refused.
 #
 # Exit map:
 #
 #   0  every step ran or was deliberately skipped
-#   1  refusal (the library or the configuration could not be read), or a step
+#   1  refusal (the library or the configuration could not be read, or a
+#      `--target` this checkout or <dir> fails the placement — `--target` takes a
+#      registered clone, and a linked worktree is refused), or a step
 #      that was meant to run failed — the message above the exit says which
 #
 # REPRO — reproduce any decision by hand, against a throwaway fixture:
 #
 #   w=$(mktemp -d); d="$w/demo"; git init -q -b trunk "$d"; mkdir -p "$d/githooks"
 #   printf '#!/usr/bin/env bash\nexit 0\n' > "$d/githooks/pre-push"
-#   printf '%s' '{"version":1,"defaultBranch":"trunk","stateDir":"sdlc-harness/","githooksDir":"githooks","layers":[],"commands":{"depInstall":"printf x > deps.marker"}}' > "$d/harness.config.json"
+#   printf '%s' '{"version":1,"defaultBranch":"trunk","stateDir":"devscene/","githooksDir":"githooks","layers":[],"commands":{"depInstall":"printf x > deps.marker"}}' > "$d/devscene.config.json"
 #   mkdir -p "$d/scripts/lib"   # copy this script + lib/ there
 #
 #   ordinary        bash "$d/scripts/setup-worktree.sh"
 #                   -> exit 0; "$d/deps.marker" exists; the build step prints its
 #                      skip line; `git -C "$d" config --worktree core.hooksPath`
 #                      is "$d/githooks"
+#   checkout's      git -C "$d" sparse-checkout disable
+#   sparse keys     git -C "$d" config --local --unset-all extensions.worktreeConfig
+#                   re-run -> exit 0; a `removed core.sparseCheckout, …` line;
+#                      `git -C / config --file "$d/.git/config.worktree" --list`
+#                      prints only core.hookspath=$d/githooks
 #   no hook file    rm "$d/githooks/pre-push"; re-run -> exit 0 with a skip line
 #   env symlink     printf 'K=v\n' > "$(git -C "$d" worktree list --porcelain |
 #                     head -1 | sed 's/^worktree //')/.env"
 #                   -> a sibling working copy's .env is a SYMLINK to that file;
 #                      one that already has its own .env is left untouched
-#   unresolvable    printf 'x' > "$d/harness.config.json"; re-run -> exit 1,
+#   unresolvable    printf 'x' > "$d/devscene.config.json"; re-run -> exit 1,
 #                   nothing installed and no git configuration written
 
 set -uo pipefail
@@ -109,34 +155,73 @@ fi
 # shellcheck source=lib/harness-run-lib.sh
 . "$hr_lib"
 
-# The checkout being bootstrapped is where THIS FILE lives — never $PWD, which
-# belongs to whoever invoked it.
+# Only a first argument of `--target` is parsed; any other argument list is
+# ignored, as it always was.
+target_mode=0
+if [ "$#" -gt 0 ] && [ "$1" = "--target" ]; then
+  if [ "$#" -ne 2 ] || [ -z "$2" ]; then
+    echo "setup-worktree.sh: --target takes exactly one directory" >&2
+    echo "  usage: setup-worktree.sh [--target <dir>]" >&2
+    exit 1
+  fi
+  target_mode=1
+fi
+
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-top="$(hr_repo_root "$script_dir")" || top=""
-if [ -z "$top" ]; then
-  echo "setup-worktree.sh: '$script_dir' is not inside a git repository — refusing to bootstrap" >&2
-  exit 1
+if [ "$target_mode" -eq 1 ]; then
+  # The checkout being bootstrapped is <dir>, a copy whose tree a run wrote, so
+  # this script and every configured value must be the main checkout's.
+  own_top="$(hr_checkout_top_nogit "$script_dir")" || own_top=""
+  main_repo="$(hr_wrapper_main_of "$script_dir")" || main_repo=""
+  if [ -z "$main_repo" ] || [ "$main_repo" != "$own_top" ]; then
+    echo "setup-worktree.sh: --target runs only from a main checkout's own scripts directory, and '$script_dir' is not in one — refusing to bootstrap" >&2
+    exit 1
+  fi
+  if ! hr_run_target_check_var "$main_repo" "$2"; then
+    echo "setup-worktree.sh: $HR_TARGET_REFUSAL — refusing to bootstrap" >&2
+    exit 1
+  fi
+  target_gitdir="$HR_TARGET_GITDIR"
+  target_kind="$HR_TARGET_KIND"
+  top="$( CDPATH= cd -P -- "$2" && pwd -P )"
+  cfg_root="$main_repo"
+else
+  # The checkout being bootstrapped is where THIS FILE lives — never $PWD, which
+  # belongs to whoever invoked it.
+  # Not git's discovery out of $script_dir, which a leftover <scriptsDir>/.git would stop.
+  top="$(hr_script_root "$script_dir")" || top=""
+  if [ -z "$top" ]; then
+    echo "setup-worktree.sh: '$script_dir' is not inside a git repository — refusing to bootstrap" >&2
+    exit 1
+  fi
+  cfg_root="$top"
 fi
 
 # Warm the library's cache once, unsubstituted, and refuse here rather than
 # letting each reader below fail separately with its own message.
 cfg_status=0
-hr_config_load "$top" || cfg_status=$?
+hr_config_load "$cfg_root" || cfg_status=$?
 if [ "$cfg_status" -ne 0 ]; then
-  echo "setup-worktree.sh: cannot resolve '$top/harness.config.json' — refusing to bootstrap" >&2
+  echo "setup-worktree.sh: cannot resolve '$cfg_root/devscene.config.json' — refusing to bootstrap" >&2
   echo "  (no configuration there, invalid JSON, more than one document, no defaultBranch, or jq missing/older than 1.5)" >&2
   exit 1
 fi
 
 # The main checkout is where every machine-local file has its single source: a
 # working copy created by git carries only tracked content.
-main_repo="$(hr_main_repo "$top")" || main_repo=""
-[ -n "$main_repo" ] || main_repo="$top"
+if [ "$target_mode" -eq 0 ]; then
+  # This mode bootstraps the checkout the script sits in, which in a clone
+  # resolves to the clone, while a clone is bootstrapped through the main
+  # checkout's --target mode, which places the main checkout from its own
+  # location (`hr_wrapper_main_of`).
+  main_repo="$(hr_main_repo "$top")" || main_repo=""
+  [ -n "$main_repo" ] || main_repo="$top"
+fi
 
 status=0
 
 # --- 1. Version manager, if this machine uses one. -------------------------
-vm_init="${HARNESS_VERSION_MANAGER_INIT:-}"
+vm_init="${DEVSCENE_VERSION_MANAGER_INIT:-}"
 if [ -n "$vm_init" ] && [ -r "$vm_init" ]; then
   echo "setup-worktree.sh: sourcing version-manager init '$vm_init'"
   # shellcheck source=/dev/null
@@ -146,7 +231,7 @@ fi
 # --- 2. The machine-local client env file. ---------------------------------
 # `appDir` is repo-relative and defaults to `.`; joining it as `<root>/.` would
 # work but reads badly in every message below, so normalize it once.
-app_dir="$(hr_app_dir "$top")" || app_dir="."
+app_dir="$(hr_app_dir "$cfg_root")" || app_dir="."
 if [ "$app_dir" = "." ]; then
   app_here="$top"
   app_main="$main_repo"
@@ -166,7 +251,7 @@ elif [ -f "$app_main/.env" ]; then
 fi
 
 # --- 3. The test-account credentials, linked and never copied. -------------
-qa_creds="$(hr_qa_creds_path "$top")" || qa_creds=""
+qa_creds="$(hr_qa_creds_path "$cfg_root")" || qa_creds=""
 if [ -n "$qa_creds" ]; then
   if [ ! -e "$top/$qa_creds" ] && [ -f "$main_repo/$qa_creds" ]; then
     mkdir -p "$(dirname "$top/$qa_creds")"
@@ -185,18 +270,71 @@ fi
 # absolute path. The value written here is therefore ABSOLUTE and
 # WORKTREE-SCOPED, so each working copy resolves to its own tracked hook.
 # Idempotent: both the `config` writes and the `chmod` are no-ops on a re-run.
-hooks_rel="$(hr_githooks_dir "$top")" || hooks_rel=""
-hooks_dir="$top/$hooks_rel"
-if [ -n "$hooks_rel" ] && [ -f "$hooks_dir/pre-push" ]; then
+# The value comes from the library because push-branch.sh refuses any other
+# value here (`hr_worktree_config_check_var`).
+#
+# Under `--target` the value is `<dir>/<the main checkout's githooksDir>`. A
+# clone has its own `.git/config`, so its one write goes to that file and the
+# main checkout's is left alone. A linked worktree never reaches here
+# (`hr_run_target_check_var`), so the second arm is taken only by the main
+# checkout given as <dir>: both its writes go to the main checkout's own
+# configuration, at the gitdir `hr_run_target_check_var` returned.
+if [ "$target_mode" -eq 1 ]; then
+  hooks_rel="$(hr_githooks_dir "$main_repo")" || hooks_rel=""
+  hooks_dir=""
+  [ -z "$hooks_rel" ] || hooks_dir="$top/$hooks_rel"
+else
+  hooks_dir="$(hr_worktree_hooks_path "$top")" || hooks_dir=""
+fi
+hooks_config_write() {
+  if [ "$target_mode" -eq 1 ] && [ "$target_kind" = clone ]; then
+    git -C / config --file "$target_gitdir/config" core.hooksPath "$hooks_dir"
+  elif [ "$target_mode" -eq 1 ]; then
+    git -C "$main_repo" -c core.hooksPath=/dev/null -c core.fsmonitor=false config extensions.worktreeConfig true &&
+      git -C / config --file "$target_gitdir/config.worktree" core.hooksPath "$hooks_dir"
+  else
+    git -C "$top" config extensions.worktreeConfig true &&
+      git -C "$top" config --worktree core.hooksPath "$hooks_dir"
+  fi
+}
+drop_inert_sparse() {
+  if hr_worktree_config_drop_inert_sparse_var "$1"; then
+    [ -z "$HR_WT_SPARSE_DROPPED" ] ||
+      echo "setup-worktree.sh: removed $HR_WT_SPARSE_DROPPED (each false) from $1, which actions/checkout's sparse-checkout disable leaves there"
+  else
+    echo "setup-worktree.sh: $HR_WT_SPARSE_REFUSAL — leaving it" >&2
+    status=1
+  fi
+}
+# Outside the hook-file test: the wrappers refuse these keys whether or not the
+# extension is on. The extension is repository-global, so the main checkout's
+# file is cleaned too whenever it is not the one being bootstrapped. A clone is
+# skipped: `hr_clone_target_check_var` already held its file to an empty one.
+# Under `--target` the non-clone arm is the main checkout given as <dir>.
+sparse_files=()
+if [ "$target_mode" -eq 0 ]; then
+  f="$(hr_worktree_config_file "$top")" && sparse_files+=("$f")
+  if [ "$main_repo" != "$top" ]; then
+    f="$(hr_worktree_config_file "$main_repo")" && sparse_files+=("$f")
+  fi
+elif [ "$target_kind" != clone ]; then
+  sparse_files+=("$target_gitdir/config.worktree")
+fi
+for f in ${sparse_files[@]+"${sparse_files[@]}"}; do
+  drop_inert_sparse "$f"
+done
+if [ -n "$hooks_dir" ] && [ -f "$hooks_dir/pre-push" ]; then
   chmod +x "$hooks_dir/pre-push" || true
   # NOTE: `extensions.worktreeConfig true` is a one-way, REPOSITORY-GLOBAL
   # switch — once enabled it changes config resolution for EVERY working copy
   # sharing this `.git`, including older ones that have not re-run this script.
   # It is safe here because `core.hooksPath` is the only worktree-scoped value
   # and every active working copy re-runs this script; keep that invariant if
-  # you add another `--worktree` setting.
-  if git -C "$top" config extensions.worktreeConfig true &&
-    git -C "$top" config --worktree core.hooksPath "$hooks_dir"; then
+  # you add another `--worktree` setting — push-branch.sh refuses to push from
+  # a working copy whose `config.worktree` holds any other key. The extension
+  # also makes live the sparse keys `actions/checkout` leaves in that file, so
+  # this step removes them first (`drop_inert_sparse`), and only at `false`.
+  if hooks_config_write; then
     echo "setup-worktree.sh: pre-push hook installed (core.hooksPath -> $hooks_dir)"
   else
     echo "setup-worktree.sh: could not point core.hooksPath at $hooks_dir — this working copy has no pre-push backstop" >&2
@@ -214,7 +352,7 @@ fi
 # version manager's shell function from step 1 is still in scope.
 run_configured() {
   local key="$1" label="$2" cmd cmd_status
-  cmd="$(hr_command "$top" "$key")"
+  cmd="$(hr_command "$cfg_root" "$key")"
   cmd_status=$?
   # The unresolvable case is tested FIRST: it also prints nothing, so folding it
   # into the empty-value test would report a configuration this script could not

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Written by `autonomous-sdlc-harness init`, and yours from there on: edit it freely, a re-run
+# Written by `devscene init`, and yours from there on: edit it freely, a re-run
 # keeps your copy. It is what `commands.test` invokes: it runs the raw test command line below
 # from the repository root, forwards whatever arguments it was given to it — what that line makes
 # of them is the command's own property, stated at the line — and prints one verdict line.
@@ -19,12 +19,30 @@ harness_fail() {
 
 # Anchor to the repository root, derived from this script's own location and never from the
 # caller's directory: `commands.*` are command lines run from the repository root and every path
-# in `harness.config.json` is repo-relative. `git -C` on the script's own directory answers with
-# the checkout this copy belongs to, so all three forms the permission profile emits — the
-# repo-relative one, its absolute twin and a sibling worktree's own copy — run at the root of the
-# checkout they were invoked out of, whatever directory the caller stood in.
+# in `devscene.config.json` is repo-relative. The placement below answers with
+# the checkout this copy belongs to, so every form the permission profiles allow-list — the
+# repo-relative one and its absolute twin in the base profile, and a run copy's own exact path in
+# the run watcher's per-run copy — runs at the root of the checkout it was invoked out of,
+# whatever directory the caller stood in.
+# The root is the nearest of the script's own directory and its ancestors that holds
+# `devscene.config.json` and that git confirms as its own top level, so git's discovery never
+# starts at a `<scriptsDir>/.git` placeholder a bubblewrap host mounts (F15); it is the run
+# library's `hr_script_root`, inlined because this wrapper sources no library.
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo_root="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null)"
+repo_root=""
+candidate="$(CDPATH= cd -P -- "$script_dir" 2>/dev/null && pwd -P)"
+while [ -n "$candidate" ]; do
+  if [ -f "$candidate/devscene.config.json" ] && [ "$(git -C "$candidate" rev-parse --show-toplevel 2>/dev/null)" = "$candidate" ]; then
+    repo_root="$candidate"
+    break
+  fi
+  [ "$candidate" != / ] || break
+  candidate="${candidate%/*}"
+  [ -n "$candidate" ] || candidate=/
+done
+if [ -z "$repo_root" ]; then
+  repo_root="$(git -C "$script_dir" rev-parse --show-toplevel 2>/dev/null)"
+fi
 if [ -z "$repo_root" ] || ! cd "$repo_root"; then
   harness_fail "test: could not resolve a repository root from '${script_dir}' (is git on PATH?)"
 fi
@@ -36,13 +54,11 @@ fi
 # test runner usually does, a line ending in a sub-command's own flags does not (`ctest` needs
 # `-R <regex>`, `cmake --build` needs `--target <name>`, a `cargo clippy … -- <flags>` line
 # forwards into the compiler's arguments). Read the line below before passing any.
-#
-# scenewise: the gates live in harness-scripts/ci-test.sh, which says what they mirror.
-bash harness-scripts/ci-test.sh "$@"
+pytest "$@"
 status=$?
 
 # Exactly one verdict line, so no caller ever appends an exit-code probe to this script. That
-# compound form is what stalls an unattended run on a permission prompt.
+# compound form is what an unattended run's permission mode refuses.
 if [ "$status" -eq 0 ]; then
   echo "PASS: test"
 else

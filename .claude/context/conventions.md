@@ -17,7 +17,7 @@
 
 ## Layers
 
-Every task is assigned to one of the layers in `harness.config.json`:
+Every task is assigned to one of the layers in `devscene.config.json`:
 
 | Layer | Path | Responsibility |
 |---|---|---|
@@ -25,9 +25,9 @@ Every task is assigned to one of the layers in `harness.config.json`:
 | `app` | `src/scenewise/app` | Use cases (stages, runner, delivery, publish) and the versioned wire contract in `src/scenewise/app/contract/`; synchronous (`ARCHITECTURE.md` §2). |
 | `adapters` | `src/scenewise/adapters` | Driven implementations of ports, one subpackage per adapter kind; heavy and optional SDK imports live here (`ARCHITECTURE.md` §2). |
 | `service` | `src/scenewise/service` | The driving side — CLI, HTTP, settings, logging — and the composition root `src/scenewise/service/bootstrap.py` (`ARCHITECTURE.md` §2). |
-| `package` | `src` | The files under `src/scenewise/` outside the four layer directories (`harness.config.json` `detection.review.rationale`). |
+| `package` | `src` | The files under `src/scenewise/` outside the four layer directories (`devscene.config.json` `detection.review.rationale`). |
 | `tests` | `tests` | The unit, contract and e2e tiers, the port fakes and the media fixtures (`ARCHITECTURE.md` §15). |
-| `general` | `.` | Everything at the repository root outside `src` and `tests` (`harness.config.json` `layers`). |
+| `general` | `.` | Everything at the repository root outside `src` and `tests` (`devscene.config.json` `layers`). |
 
 ## Dependency direction
 
@@ -105,7 +105,7 @@ A change is done when the CI gates pass (`.github/workflows/ci.yml`; `ARCHITECTU
 - A used port's test double is its in-memory fake in `tests/fakes.py`, which passes the port's contract suite; use-case tests run over `fake_dependencies` (`tests/fakes.py` module docstring, `fake_dependencies`).
 - `unittest.mock` is allowed in tests (maintainer decision, 2026-10-09). It never stands in for a port where that port's fake exists, because only the fake is held to the contract suite.
 
-**One test file on its own:** `bash harness-scripts/test.sh tests/unit/test_jobs.py`, run from the repository root. The full suite is `bash harness-scripts/test.sh` with no argument; type and static gates are `bash harness-scripts/typecheck.sh` (`harness.config.json` `commands`).
+**One test file on its own:** `bash harness-scripts/test.sh tests/unit/test_jobs.py`, run from the repository root. The full suite is `bash harness-scripts/test.sh` with no argument; type and static gates are `bash harness-scripts/typecheck.sh` (`devscene.config.json` `commands`).
 
 ## The general layer
 
@@ -120,11 +120,11 @@ A change is done when the CI gates pass (`.github/workflows/ci.yml`; `ARCHITECTU
 
 ## Surfaces this project does not have
 
-scenewise is a headless service (`ARCHITECTURE.md` §1; `docs/decisions/initial-research.md` Q9 "no browser UI"). It has no UI framework, client-side state container, localization accessor, theming or sizing accessor, shared UI components, test attributes for an interactive test, navigation module, or route/screen registries; adding any of them is a design decision to state in `ARCHITECTURE.md` first. Its HTTP routes are registered in `src/scenewise/service/http/routes.py`. `phases.qa` is off (`harness.config.json`).
+scenewise is a headless service (`ARCHITECTURE.md` §1; `docs/decisions/initial-research.md` Q9 "no browser UI"). It has no UI framework, client-side state container, localization accessor, theming or sizing accessor, shared UI components, test attributes for an interactive test, navigation module, or route/screen registries; adding any of them is a design decision to state in `ARCHITECTURE.md` first. Its HTTP routes are registered in `src/scenewise/service/http/routes.py`. `phases.qa` is off (`devscene.config.json`).
 
 ## Reference implementation
 
-None: scenewise is the single implementation, and `phases.parity` is off (`harness.config.json`).
+None: scenewise is the single implementation, and `phases.parity` is off (`devscene.config.json`).
 
 ## Commit-message policy
 
@@ -156,7 +156,7 @@ None: scenewise is the single implementation, and `phases.parity` is off (`harne
 
 > Domain constructors raise plain `ValueError`; the layer that receives untrusted data translates it. `src/scenewise/app/contract/mapping.py` (`to_domain`) turns a `ValueError` from `domain.jobs.job_id` into `InputError(code="invalid_request", detail=str(e))`, so the caller gets an actionable code and `domain` stays free of HTTP and wire concerns.
 
-_Provenance: existing mode. Read `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `docs/skeleton-notes.md`, `docs/decisions/initial-research.md` (§Q9, §8), `docs/research/user-decisions.md`, `pyproject.toml`, `harness.config.json`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml`, `scripts/check_suppressions.py`, `scripts/check_module_size.py`, key modules in every `src/scenewise/` layer, `tests/fakes.py`, `tests/contract/`, and `git log`. Corpus fix pass: re-read `src/scenewise/domain/jobs.py`, `src/scenewise/domain/inputs.py`, `src/scenewise/app/contract/envelope.py`, `src/scenewise/app/contract/mapping.py`, `src/scenewise/app/runner.py`, `src/scenewise/app/delivery.py`, `src/scenewise/app/deps.py`, `src/scenewise/ports.py`, `src/scenewise/adapters/`, `src/scenewise/service/bootstrap.py`, `src/scenewise/service/http/routes.py`, `src/scenewise/service/config.py`, `tests/fakes.py`, `tests/contract/`, `ARCHITECTURE.md` §3, §14, §15, and re-ran the fixed-subject probe. Second corpus fix pass: re-read `.claude/context/domain.md`, `app.md`, `service.md`, `tests.md`, `src/scenewise/domain/plan.py`, `src/scenewise/domain/jobs.py`, `src/scenewise/app/runner.py`, `src/scenewise/service/bootstrap.py`, `vulture_whitelist.py`, `.pre-commit-config.yaml`, `scripts/check_stray_config.py`, `pyproject.toml`, `ARCHITECTURE.md` §2, and re-ran the fixed-subject probe. Third corpus fix pass: re-read `.claude/context/domain.md` `## Closed sets: unions, enums and tables`, `src/scenewise/domain/jobs.py` (`WireStatus`, `wire_status`) and `src/scenewise/app/contract/mapping.py` (`status_json`)._
+_Provenance: existing mode. Read `README.md`, `ARCHITECTURE.md`, `ROADMAP.md`, `docs/skeleton-notes.md`, `docs/decisions/initial-research.md` (§Q9, §8), `docs/research/user-decisions.md`, `pyproject.toml`, `devscene.config.json`, `.pre-commit-config.yaml`, `.github/workflows/ci.yml`, `scripts/check_suppressions.py`, `scripts/check_module_size.py`, key modules in every `src/scenewise/` layer, `tests/fakes.py`, `tests/contract/`, and `git log`. Corpus fix pass: re-read `src/scenewise/domain/jobs.py`, `src/scenewise/domain/inputs.py`, `src/scenewise/app/contract/envelope.py`, `src/scenewise/app/contract/mapping.py`, `src/scenewise/app/runner.py`, `src/scenewise/app/delivery.py`, `src/scenewise/app/deps.py`, `src/scenewise/ports.py`, `src/scenewise/adapters/`, `src/scenewise/service/bootstrap.py`, `src/scenewise/service/http/routes.py`, `src/scenewise/service/config.py`, `tests/fakes.py`, `tests/contract/`, `ARCHITECTURE.md` §3, §14, §15, and re-ran the fixed-subject probe. Second corpus fix pass: re-read `.claude/context/domain.md`, `app.md`, `service.md`, `tests.md`, `src/scenewise/domain/plan.py`, `src/scenewise/domain/jobs.py`, `src/scenewise/app/runner.py`, `src/scenewise/service/bootstrap.py`, `vulture_whitelist.py`, `.pre-commit-config.yaml`, `scripts/check_stray_config.py`, `pyproject.toml`, `ARCHITECTURE.md` §2, and re-ran the fixed-subject probe. Third corpus fix pass: re-read `.claude/context/domain.md` `## Closed sets: unions, enums and tables`, `src/scenewise/domain/jobs.py` (`WireStatus`, `wire_status`) and `src/scenewise/app/contract/mapping.py` (`status_json`)._
 
 ## Not determined
 
