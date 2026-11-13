@@ -2,7 +2,10 @@ name: ci
 on:
   push:
     branches: [main, dev]
-  pull_request:            # default types: opened, synchronize, reopened
+  pull_request:
+    # ready_for_review: a DevScene run's pushes start no workflow, so CI on its
+    # final tip runs on the ready flip the deliver job makes with DEVSCENE_GIT_TOKEN.
+    types: [opened, synchronize, reopened, ready_for_review]
 permissions:
   contents: read
 concurrency:
